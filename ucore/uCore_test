@@ -1,0 +1,390 @@
+#!/bin/bash
+
+stdout=/dev/stdout
+stderr=/dev/stderr
+
+BUILD_DIR=${BUILD_DIR:-obj}
+RECORD_MODE=${RECORD_MODE:-}
+TEST_CASE=
+TIMEOUT=10
+WAIT_TIMEOUT=0
+MAX_PROCS=`grep processor /proc/cpuinfo | wc -l`
+
+DEFAULT_TEST=y
+UCORE_TEST_DIR=src/user-ucore
+UCORE_TEST_ENABLED=
+: ${BIONIC_LIBC_TEST_DIR=../../ucore_lib_bioniclibc}
+BIONIC_LIBC_TEST_ENABLED=
+: ${UCLIBC_TEST_DIR=../../ucore_lib_uclibc}
+UCLIBC_ENABLED=
+
+BRK_FUNC=readline
+QEMU_SERIAL_LOG=serial.log
+
+export SUMMARY=${SUMMARY:-$stdout}
+TEST_LIST=testlist
+LOCK_FILENAME=.build-lock
+SPEC_TMP=.spec.tmp
+PATTERN_TMP=.pattern.tmp
+TOTAL_COUNT_TMP=.total.tmp
+PASSED_COUNT_TMP=.passed.tmp
+FAILED_COUNT_TMP=.failed.tmp
+BROKEN_COUNT_TMP=.broken.tmp
+
+SFSIMG_CLEAN=0
+
+# usage: rebuild_testimg <dir> <output path>
+rebuild_testimg() {
+    BUILD_OK=1
+    if [ "$TEST_SUITE_NAME" = "ucore" ]; then
+        UCORE_TEST=xx make O=$BUILD_DIR sfsimg > /dev/null 2>&1
+        BUILD_OK=$?
+    else
+        make -C $1 > /dev/null 2>&1
+        if [ ! -e $1/rootfs ]; then
+            return 1
+        fi
+        if [ $? -eq 0 ]; then
+            dd if=/dev/zero of=$2 bs=1M count=$UCONFIG_SFS_IMAGE_SIZE > /dev/null 2>&1
+            $BUILD_DIR/mksfs $2 $1/rootfs > /dev/null 2>&1
+            BUILD_OK=$?
+        fi
+    fi
+
+    if [ $BUILD_OK -eq 0 ]; then
+        SFSIMG_CLEAN=1
+    fi
+    return $BUILD_OK
+}
+
+# usage: check_regexps <log file> <test spec file>
+check_regexps() {
+    log=$1
+    spec_file=$2
+
+    okay=yes
+    not=0
+    reg=0
+    error=
+
+    sed "/@.*$/d" $spec_file | sed "s/'/\n'/" | sed "s/^![ \t]*/!\n/" | sed "s/^-[ \t]*/-\n/" | sed "/^[[:space:]]*$/d" > $TEST_RESULT_DIR/$PATTERN_TMP.$$
+    while read i; do
+        if [ "x$i" = "x!" ]; then
+            not=1
+        elif [ "x$i" = "x-" ]; then
+            reg=1
+        else
+            i=${i#*\'}
+            pattern=${i%\'*}
+            if [ $reg -ne 0 ]; then
+                grep '-E' "^$pattern\$" $log > /dev/null 2>&1
+            else
+                grep '-F' "$pattern" $log > /dev/null 2>&1
+            fi
+            found=$(($? == 0))
+            if [ $found -eq $not ]; then
+                if [ $found -eq 0 ]; then
+                    msg="!! error: missing '$pattern'"
+                else
+                    msg="!! error: got unexpected line '$pattern'"
+                fi
+                okay=no
+                if [ -z "$error" ]; then
+                    error="$msg"
+                else
+                    error="$error\n$msg"
+                fi
+            fi
+            not=0
+            reg=0
+        fi
+    done < $TEST_RESULT_DIR/$PATTERN_TMP.$$
+
+    rm $TEST_RESULT_DIR/$PATTERN_TMP.$$
+    if [ "$okay" = "yes" ]; then
+        return 0
+    else
+        if [[ $RECORD_MODE != "y" ]]; then
+            echo -e "$error" > $stderr
+        else
+            echo -e "$error" > $TEST_RESULT_DIR/$name.error
+            cat $log >> $TEST_RESULT_DIR/$name.error
+        fi
+        return 1
+    fi
+}
+
+# usage: print_info <test name> <result> <expected result> <count file>
+print_result() {
+    decorator='!'
+    if [ $2 = $3 ]; then
+        decorator=' '
+    fi
+    printf "%-60s[%c%6s%c]\n" "<$TEST_SUITE_NAME> $1" "$decorator" "$2" "$decorator" >> $SUMMARY
+    echo -n "$decorator" >> $4
+}
+
+# usage: acquire_lock <lock file path>
+acquire_lock() {
+    lockfile $1
+}
+
+# usage: release_lock <lock file path>
+release_lock() {
+    rm -r $1
+}
+
+# usage: run_test <testspec path>
+run_test() {
+    TEST_SPEC=$1
+    name=`basename $TEST_SPEC .testspec`
+    source $BUILD_DIR/config/auto.conf
+
+    arch=
+    timeout=
+    program=
+    grep "^@.*" $TEST_SPEC | sed "s/^@\([A-Za-z0-9_]*\)[ \t]*\(.*\)$/\1=\"\2\"/g" > $TEST_RESULT_DIR/$SPEC_TMP.$$
+    source $TEST_RESULT_DIR/$SPEC_TMP.$$
+    if [ -z $program ]; then
+        return 10
+    fi
+    if [ "$arch" ]; then
+        echo $arch | grep "\b$UCONFIG_ARCH\b" > /dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            return 10
+        fi
+    fi
+    expected=" PASS "
+    if [ "$failin" ]; then
+        echo $failin | grep "\b$UCONFIG_ARCH\b" > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            expected=" FAIL "
+        fi
+    fi
+    if [ -z "$timeout" ] || [ $timeout -gt 600 ]; then
+        timeout=$TIMEOUT
+    fi
+
+    export UCORE_TEST=$program
+    echo -n . >> $BUILD_DIR/$TOTAL_COUNT_TMP
+
+    acquire_lock $BUILD_DIR/$LOCK_FILENAME
+    grep "^@sfs_force_rebuild[ \t]*$" $TEST_SPEC > /dev/null 2>&1
+    found=$(($? == 0))
+    if [ $found -eq 1 ] && [ $SFSIMG_CLEAN -ne 1 ]; then
+        # FIXME: The arguments here are dummy
+        # It won't work if any test case other than those with uCore requires to rebuild the image
+        rebuild_testimg $UCORE_TEST_DIR sfs-orig.img
+        if [ $? -ne 0 ]; then
+            print_result $name "BROKEN" $expected $BUILD_DIR/$BROKEN_COUNT_TMP
+            return 1
+        fi
+        cp $BUILD_DIR/sfs.img $BUILD_DIR/sfs.img.$$
+    else
+        ln -s sfs.img $BUILD_DIR/sfs.img.$$
+    fi
+
+    make O=$BUILD_DIR > /dev/null 2>&1
+    result=$?
+    cp $BUILD_DIR/kernel.img $BUILD_DIR/kernel.img.$$
+    cp $BUILD_DIR/kernel/kernel-$UCONFIG_ARCH.elf $BUILD_DIR/kernel/kernel-$UCONFIG_ARCH.elf.$$
+    release_lock $BUILD_DIR/$LOCK_FILENAME
+    if [ $result -ne 0 ]; then
+        print_result $name "BROKEN" $expected $BUILD_DIR/$BROKEN_COUNT_TMP
+        exit 1
+    fi
+
+    (
+        ulimit -t $timeout
+    exec ./uCore_run -d $BUILD_DIR -t $$
+    ) > /dev/null 2>&1 &
+    pid=$!
+    sleep $WAIT_TIMEOUT
+    "$UCONFIG_CROSS_COMPILE"gdb -batch -nx \
+        -ex "target remote :$[ $$ % 10000 + 40000 ]" \
+        -ex "file $BUILD_DIR/kernel/kernel-$UCONFIG_ARCH.elf.$$"  \
+        -ex "b $BRK_FUNC" \
+        -ex "c" > /dev/null 2>&1
+
+    kill $pid > /dev/null 2>&1
+    SFSIMG_CLEAN=0
+
+    check_regexps $BUILD_DIR/$QEMU_SERIAL_LOG.$$ $TEST_SPEC
+    case $? in
+        0)
+            print_result $name " PASS " $expected $BUILD_DIR/$PASSED_COUNT_TMP
+            ;;
+        1)
+            print_result $name " FAIL " $expected $BUILD_DIR/$FAILED_COUNT_TMP
+            ;;
+    esac
+
+    if [[ $RECORD_MODE = "y" ]]; then
+        tail -n 1 $SUMMARY
+    fi
+}
+
+# usage: run_test_suite <name> <src dir> <output file name>
+run_test_suite() {
+    if [ -z $3 ]; then
+        return 1
+    fi
+    export TEST_SUITE_NAME=$1
+    rebuild_testimg $2 $BUILD_DIR/$3
+    if [ $? -ne 0 ]; then
+        return 1;
+    fi
+    ln -snf $3 $BUILD_DIR/sfs.img
+
+    if [ ! -z $TEST_CASE ]; then
+        if [ ! -f $TEST_CASE ]; then
+            return 1
+        fi
+        echo $TEST_CASE > $TEST_RESULT_DIR/$TEST_LIST
+    else
+        find $2/testspecs -name *.testspec | while read file; do
+            timeout=`grep "^@timeout" $file | egrep -o "[0-9]+"`
+            echo ${timeout:-10} $file
+        done | sort -nr | grep -o " .*$" > $TEST_RESULT_DIR/$TEST_LIST
+    fi
+    cat $TEST_RESULT_DIR/$TEST_LIST | xargs --max-procs=$MAX_PROCS -n 1 "$0" -1
+}
+
+while getopts "d:f:hrs:t:w:1:" opt; do
+    case $opt in
+        d)
+            export BUILD_DIR=$OPTARG
+            ;;
+        f)
+            TEST_CASE=$OPTARG
+            ;;
+        h)
+            echo "Usage $0 [options]"
+            echo "Options:"
+            echo "  -d <directory>               uCore build directory                            "
+            echo "                               default to obj/                                  "
+            echo "  -f <spec file>               Run the test given                               "
+            echo "  -r                           Record error messages in the build               "
+            echo "                               dir and do not print them on stderr              "
+            echo "  -s <testsuite name>          Name of the testsuite to be run                  "
+            echo "                               Can be used multiple times                       "
+            echo "  -t <timeout>                 How long each test instance can live in seconds  "
+            echo "                               default to 10                                    "
+            echo "  -w <time>                    Wait for <time> seconds before starting gdb after"
+            echo "                               the emulator is started.                         "
+            echo "                               default to 0                                     "
+            echo "  -o                           HTML output                                      "
+            echo "                                                                                "
+            echo "This script is platform-independent.                                            "
+            echo "See './uCore_run -h' for supported platforms.                                   "
+            echo "                                                                                "
+            echo "Supported test suites: ucore, bionic                                            "
+            echo "                                                                                "
+            echo "Report bugs to https://github.com/chyyuu/ucore_plus/issues                      "
+            exit 0
+            ;;
+        r)
+            export RECORD_MODE=y
+            ;;
+        s)
+            DEFAULT_TEST=
+            case $OPTARG in
+                ucore)  UCORE_TEST_ENABLED=y ;;
+                bionic) BIONIC_LIBC_TEST_ENABLED=y ;;
+                all)
+                    UCORE_TEST_ENABLED=y
+                    BIONIC_LIBC_TEST_ENABLED=y
+                    ;;
+                *) echo Unknown test suite $OPTARG! ;;
+            esac
+            ;;
+        t)
+            case $OPTARG in
+                ''|*[!0-9]*) echo "WARNING: Bad number: $OPTARG" ;;
+                *) TIMEOUT=$OPTARG ;;
+            esac
+            ;;
+        w)
+            case $OPTARG in
+                ''|*[!0-9]*) echo "WARNING: Bad number: $OPTARG" ;;
+                *) WAIT_TIMEOUT=$OPTARG ;;
+            esac
+            ;;
+        o)
+            HTML_OUTPUT=y
+            ;;
+        1)
+            # This is a private option which should only be used in the script itself
+            run_test $OPTARG
+            result=$?
+            rm -f $BUILD_DIR/kernel.img.$$
+            rm -f $BUILD_DIR/sfs.img.$$
+            rm -f $BUILD_DIR/serial.log.$$
+            rm -f $BUILD_DIR/kernel/kernel-$UCONFIG_ARCH.elf.$$
+            exit $result
+            ;;
+        ?)
+            exit 1
+            ;;
+    esac
+done
+
+if [[ $DEFAULT_TEST = "y" ]]; then
+    UCORE_TEST_ENABLED=y
+fi
+
+TIMESTAMP=`date +%Y%m%d-%H%M%S`
+if [[ $RECORD_MODE = "y" ]]; then
+    export TEST_RESULT_DIR=$BUILD_DIR/test-result.$TIMESTAMP
+    export SUMMARY=$TEST_RESULT_DIR/summary
+else
+    export TEST_RESULT_DIR=/tmp/uCore_test
+fi
+mkdir -p $TEST_RESULT_DIR
+if [[ $RECORD_MODE = "y" ]]; then
+    ln -fns test-result.$TIMESTAMP $BUILD_DIR/test-result.latest
+fi
+
+source $BUILD_DIR/config/auto.conf
+
+touch $BUILD_DIR/$TOTAL_COUNT_TMP
+touch $BUILD_DIR/$PASSED_COUNT_TMP
+touch $BUILD_DIR/$FAILED_COUNT_TMP
+touch $BUILD_DIR/$BROKEN_COUNT_TMP
+
+# uCore builtin test suite
+if [[ $UCORE_TEST_ENABLED = "y" ]] && [ -e $UCORE_TEST_DIR ]; then
+    run_test_suite "ucore" $UCORE_TEST_DIR sfs-orig.img
+fi
+
+# bionic libc
+if [[ $BIONIC_LIBC_TEST_ENABLED = "y" ]] && [ -e $BIONIC_LIBC_TEST_DIR ]; then
+    run_test_suite "bionic libc" $BIONIC_LIBC_TEST_DIR sfs-bionic.img
+fi
+
+# uclibc
+if [[ $UCLIBC_TEST_ENABLED = "y" ]] && [ -e $UCLIBC_TEST_DIR ]; then
+    run_test_suite "uclibc" $BIONIC_LIBC_TEST_DIR sfs-uclibc.img
+fi
+
+passed=`cat $BUILD_DIR/$PASSED_COUNT_TMP | wc -m`
+passed_unexpected=`grep -o '!' $BUILD_DIR/$PASSED_COUNT_TMP | wc -l`
+failed=`cat $BUILD_DIR/$FAILED_COUNT_TMP | wc -m`
+failed_unexpected=`grep -o '!' $BUILD_DIR/$FAILED_COUNT_TMP | wc -l`
+broken=`cat $BUILD_DIR/$BROKEN_COUNT_TMP | wc -m`
+total=`cat $BUILD_DIR/$TOTAL_COUNT_TMP | wc -m`
+
+echo "========== Test Summary ==========" >> $SUMMARY
+printf "%-8s%-20s%-20s%-10s%-10s\n" "" "passed(unexpected)" "failed(unexpected)" broken total >> $SUMMARY
+printf "%-8s%-20s%-20s%-10s%-10s\n" $UCONFIG_ARCH "$passed($passed_unexpected)" "$failed($failed_unexpected)" $broken $total >> $SUMMARY
+
+rm -f $BUILD_DIR/$TOTAL_COUNT_TMP $BUILD_DIR/$PASSED_COUNT_TMP $BUILD_DIR/$FAILED_COUNT_TMP $BUILD_DIR/$BROKEN_COUNT_TMP
+rm -f $BUILD_DIR/kernel.img.*
+rm -f $BUILD_DIR/sfs.img.*
+rm -f $BUILD_DIR/serial.log.*
+rm -f $BUILD_DIR/kernel/kernel-$UCONFIG_ARCH.elf.*
+rm -f $TEST_RESULT_DIR/$SPEC_TMP.*
+
+if [[ $RECORD_MODE = "y" ]]; then
+    tail -n 3 $SUMMARY
+fi

@@ -20,7 +20,9 @@
 *.lib
 *.a
 *.la
+*.lai
 *.lo
+*.slo
 
 # Shared objects (inc. Windows DLLs)
 *.dll
@@ -51,5 +53,13 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-*.pdf
+# temp files
+*~
+*.swp
+*.bak
+*.new
+*.org
 .DS_Store
+
+# generated documents
+*.pdf

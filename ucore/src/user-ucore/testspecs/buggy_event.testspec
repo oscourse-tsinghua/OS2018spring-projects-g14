@@ -1,0 +1,9 @@
+@program	/testbin/buggy_event
+@arch		i386
+
+  - 'kernel_execve: pid = [0-9]{1,2}, name = "/testbin/buggy_event".'
+    'child munmap ok.'
+    'buggy_event pass.'
+    'all user-mode processes have quit.'
+    'init check memory pass.'
+! - 'user panic at .*'

@@ -1,0 +1,7 @@
+@program	/testbin/faultreadkernel
+
+  - 'kernel_execve: pid = [0-9]{1,2}, name = "/testbin/faultreadkernel".'
+  - 'trapframe at 0x.*'
+    'killed by kernel'
+!   'FAIL: T.T'
+! - 'user panic at .*'

@@ -1,0 +1,78 @@
+ifneq ($(MAKECMDGOALS),clean)
+include $(KCONFIG_AUTOCONFIG)
+endif
+
+PHONY+=all subdir clean
+
+#TARGET_CFLAGS := -g -ggdb
+TARGET_CFLAGS += -fno-builtin -nostdlib  -nostdinc
+TARGET_CFLAGS += -D__KERNEL__ -D__KERN__ 
+TARGET_CFLAGS += $(shell echo $(UCONFIG_ADDITIONAL_CFLAGS))
+ifdef UCONFIG_PROFILER_ON
+TARGET_CFLAGS += -pg
+endif
+
+TARGET_LDFLAGS += $(shell echo $(UCONFIG_ADDITIONAL_LDFLAGS))
+
+KTREE_OBJ_ROOT := $(OBJPATH_ROOT)/kernel
+
+export KTREE_OBJ_ROOT
+
+KERN_INCLUDES := . libs syscall debug driver mm numa sync schedule process fs \
+                 fs/swap fs/vfs fs/pipe fs/sfs fs/devs module kmodule sysconf \
+                 dde36
+
+ifdef UCONFIG_HAVE_LINUX_DDE_BASE
+KERN_INCLUDES += module/include
+endif
+
+TARGET_CFLAGS += $(addprefix -I$(KTREE)/, $(KERN_INCLUDES))
+
+TARGET_CFLAGS += -include $(KCONFIG_AUTOHEADER)
+ifneq ($(UCORE_TEST),)
+TARGET_CFLAGS += -DUNITTEST=$(UCORE_TEST)
+endif
+
+ifneq ($(MAKECMDGOALS),clean)
+include $(KTREE)/arch/$(ARCH)/include.mk
+endif
+TARGET_CFLAGS += $(addprefix -I$(KTREE)/arch/$(ARCH)/, $(ARCH_INLUCDES))
+TARGET_CFLAGS += $(ARCH_CFLAGS)
+TARGET_LDFLAGS += $(ARCH_LDFLAGS)
+
+export TARGET_CFLAGS
+export TARGET_LDFLAGS
+
+KERNEL_BUILTIN_O := $(KTREE_OBJ_ROOT)/kernel-builtin.o
+KERNEL_BUILTIN_LIST := $(KTREE_OBJ_ROOT)/.builtinlist.tmp
+
+# touch proc.c again to ensure that, if no UCORE_TEST given in the next build, /bin/sh will be used.
+all: $(KTREE_OBJ_ROOT) $(KERNEL_BUILTIN_O)
+ifneq ($(UCORE_TEST),)
+	$(Q)touch $(KTREE)/process/proc.c
+endif
+	$(Q)$(MAKE) KERNEL_BUILTIN=$(KERNEL_BUILTIN_O)  -C $(KTREE)/arch/$(ARCH) -f $(KTREE)/arch/$(ARCH)/Makefile.image all
+
+$(KERNEL_BUILTIN_O): subdir
+	@echo Building uCore Kernel for $(UCONFIG_ARCH)
+	$(Q)$(TARGET_LD) $(TARGET_LDFLAGS) -r -o $@ $(shell xargs < $(KERNEL_BUILTIN_LIST))
+
+$(KTREE_OBJ_ROOT):
+	mkdir -p $@
+
+clean:
+	$(Q)rm -rf $(KTREE_OBJ_ROOT)
+	$(Q)$(MAKE)  -C $(KTREE)/arch/$(ARCH) -f $(KTREE)/arch/$(ARCH)/Makefile.image clean
+
+subdir: $(KTREE_OBJ_ROOT) $(KCONFIG_AUTOHEADER) $(KCONFIG_AUTOCONFIG) FORCE
+	$(Q)rm -f $(KERNEL_BUILTIN_LIST)
+	$(Q)touch $(KERNEL_BUILTIN_LIST)
+ifneq ($(UCORE_TEST),)
+	$(Q)touch $(KTREE)/process/proc.c
+endif
+	$(Q)$(MAKE) -f Makefile.subdir OBJPATH=$(KTREE_OBJ_ROOT) LOCALPATH=$(KTREE) BUILTINLIST=$(KERNEL_BUILTIN_LIST)
+
+PHONY +=FORCE
+FORCE:
+
+.PHONY: $(PHONY)
