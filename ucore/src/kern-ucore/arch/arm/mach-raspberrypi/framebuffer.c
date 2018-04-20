@@ -9,10 +9,12 @@
 #define BUFFER_ADDRESS  0x1000
 
 /* Screen parameters set in fb_init() */
-static unsigned int screenbase, screensize;
+static unsigned int screenbase = 0, screensize = 0;
 static unsigned int fb_x, fb_y, pitch;
 /* Max x/y character cell */
 static unsigned int max_x, max_y;
+
+static int fb_exist = 0, fb_mapped = 0;
 
 /* Framebuffer initialisation failed. Can't display an error, so flashing
  * the OK LED will have to do
@@ -26,17 +28,18 @@ static void fb_fail(unsigned int num)
 
 void fb_init_mmu(void)
 {
-	uint32_t newbase = __ucore_ioremap(screenbase, screensize, 0);
-	screenbase = newbase;
+	if (fb_exist) {
+		uint32_t newbase = __ucore_ioremap(screenbase, screensize, 0);
+		screenbase = newbase;
+		fb_mapped = 1;
+	}
 }
-
-static int fb_exist = 0;
 
 void fb_init(void)
 {
 	unsigned int var;
 	unsigned int count;
-	volatile unsigned int mailbuffer[32];
+	volatile unsigned int mailbuffer[32] __attribute__((aligned (16)));
 
 	/* Get the display size */
 	mailbuffer[0] = 8 * 4;	// Total size
@@ -98,9 +101,11 @@ void fb_init(void)
 	var = readmailbox(8);
 
 	/* Valid response in data structure */
-	if (mailbuffer[1] != 0x80000000)
+	if (mailbuffer[1] != 0x80000000) {
 		kprintf
 		    ("Framebuffer: mailbox call to set up framebuffer failed\n");
+		return;
+	}
 
 	count = 2;		/* First tag */
 	while ((var = mailbuffer[count])) {
@@ -113,24 +118,30 @@ void fb_init(void)
 		 */
 		count += 3 + (mailbuffer[count + 1] >> 2);
 
-		if (count > 21)
+		if (count > 21) {
 			kprintf
 			    ("Framebuffer: mailbox call to set up framebuffer "
 			     "returned an invalid list of response tabs\n");
+			return;
+		}
 	}
 
 	/* 8 bytes, plus MSB set to indicate a response */
-	if (mailbuffer[count + 2] != 0x80000008)
+	if (mailbuffer[count + 2] != 0x80000008) {
 		kprintf
 		    ("Framebuffer: mailbox call returned an invalid response for the framebuffer tag\n");
+		return;
+	}
 
 	/* Framebuffer address/size in response */
 	screenbase = mailbuffer[count + 3];
 	screensize = mailbuffer[count + 4];
 
-	if (screenbase == 0 || screensize == 0)
+	if (screenbase == 0 || screensize == 0) {
 		kprintf
 		    ("Framebuffer: mailbox call returned an invalid address/size\n");
+		return;
+	}
 
 	/* Get the framebuffer pitch (bytes per line) */
 	mailbuffer[0] = 7 * 4;	// Total size
@@ -146,14 +157,18 @@ void fb_init(void)
 	var = readmailbox(8);
 
 	/* 4 bytes, plus MSB set to indicate a response */
-	if (mailbuffer[4] != 0x80000004)
+	if (mailbuffer[4] != 0x80000004) {
 		kprintf
 		    ("Framebuffer: mailbox call to set pitch returned an invalid response\n");
+		return;
+	}
 
 	pitch = mailbuffer[5];
-	if (pitch == 0)
+	if (pitch == 0) {
 		kprintf
 		    ("Framebuffer: mailbox call to set pitch returned an invalid pitch value\n");
+		return;
+	}
 
 	/* Need to set up max_x/max_y before using fb_write */
 	max_x = fb_x / TELETEXT_W;
@@ -210,7 +225,7 @@ static void newline()
  */
 void fb_write(unsigned char ch)	//char *text)
 {
-	if (!fb_exist)
+	if (!fb_exist || !fb_mapped)
 		return;
 
 	if (ch == 13) {
