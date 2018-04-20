@@ -69,7 +69,7 @@
  * */
 
 /* All physical memory mapped at this address */
-#define KERNBASE            SDRAM0_START
+#define KERNBASE            KERNEL_BASE
 #define KMEMSIZE            SDRAM0_SIZE	// the maximum amount of physical memory
 #define KERNTOP             (KERNBASE + KMEMSIZE)
 

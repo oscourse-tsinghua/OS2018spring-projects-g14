@@ -18,7 +18,7 @@ KERNEL_ELF := $(KTREE_OBJ_ROOT)/kernel-$(ARCH).elf
 KERNEL_UIMAGE := $(OBJPATH_ROOT)/kernel.img
 LINK_FILE_IN	:= $(KTREE)/arch/${ARCH}/ucore.ld.in
 LINK_FILE     := $(KTREE_OBJ_ROOT)/arch/$(ARCH)/ucore.ld
-SEDFLAGS	= s/TEXT_START/$(UCONFIG_KERNEL_BASE)/
+SEDFLAGS	= s/TEXT_START/$(UCONFIG_TEXT_START)/
 
 LIBGCC := $(shell $(TARGET_CC) --print-file-name=libgcc.a)
 

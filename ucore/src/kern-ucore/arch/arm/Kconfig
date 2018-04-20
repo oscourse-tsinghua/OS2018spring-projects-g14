@@ -7,7 +7,7 @@ choice
 	default ARM_CPU_V7
 	help
     Select ARM CPU version
-	
+
 config ARM_CPU_V5
 	bool "ARMv5"
 
@@ -69,6 +69,14 @@ config HAVE_BOOTLOADER
 config FPU_ENABLE
   bool "Enable FPU"
   default n
+
+config KERNEL_BASE
+  hex  "Kernel base address"
+  default 0xc0000000
+
+config TEXT_START
+  hex  "Kernel text section start address"
+  default 0xc0008000
 
 config BIONIC_LIBC
   depends FPU_ENABLE

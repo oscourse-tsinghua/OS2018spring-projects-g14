@@ -7,7 +7,7 @@ ENTRY(kern_entry)
 
 SECTIONS {
     /* Load the kernel at this address: "." means the current address */
-    . = 0xc0008000;
+    . = TEXT_START;
     PROVIDE(__kernel_text_start = .);
 
     .text : {
@@ -79,7 +79,7 @@ SECTIONS {
         . = ALIGN(4096);
     PROVIDE(initrd_begin = .);
       *(.initrd)
-      . = ALIGN(4096); 
+      . = ALIGN(4096);
     PROVIDE(initrd_end = .);
     }
 
