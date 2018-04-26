@@ -6,7 +6,7 @@ PHONY+=all subdir clean
 
 #TARGET_CFLAGS := -g -ggdb
 TARGET_CFLAGS += -fno-builtin -nostdlib  -nostdinc
-TARGET_CFLAGS += -D__KERNEL__ -D__KERN__ 
+TARGET_CFLAGS += -D__KERNEL__ -D__KERN__
 TARGET_CFLAGS += $(shell echo $(UCONFIG_ADDITIONAL_CFLAGS))
 ifdef UCONFIG_PROFILER_ON
 TARGET_CFLAGS += -pg
@@ -42,6 +42,7 @@ TARGET_LDFLAGS += $(ARCH_LDFLAGS)
 
 export TARGET_CFLAGS
 export TARGET_LDFLAGS
+export PLATFORM_DEF
 
 KERNEL_BUILTIN_O := $(KTREE_OBJ_ROOT)/kernel-builtin.o
 KERNEL_BUILTIN_LIST := $(KTREE_OBJ_ROOT)/.builtinlist.tmp

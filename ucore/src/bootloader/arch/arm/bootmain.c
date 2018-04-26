@@ -14,6 +14,8 @@
 
 #define ELFHDR		((struct elfhdr *) (BOOTLOADER_BASE+0x1000))	// scratch space
 
+extern void __memcpy(void* va, void* count, uint32_t offset);
+
 /* uart_putc, uart_put_s
  * write on UART0 */
 static void uart_putc(int c)
@@ -33,8 +35,9 @@ static void uart_putc(int c)
 #endif
 
 #ifdef PLATFORM_RASPBERRYPI
-	while (!((*UART0_CSR) & RASPI_US_TXRDY)) ;
-	*UART0_TX = c;
+	// FIXME currently can not not work
+	// while (!((*UART0_CSR) & RASPI_US_TXRDY)) ;
+	// *UART0_TX = c;
 #endif
 }
 
@@ -57,7 +60,7 @@ static void readseg(uintptr_t va, uint32_t count, uint32_t offset)
 void bootmain(void)
 {
 
-	uart_puts("Booting...\n");
+	// uart_puts("Booting...\n");
 
 	// is this a valid ELF?
 	if (ELFHDR->e_magic != ELF_MAGIC) {
@@ -70,15 +73,15 @@ void bootmain(void)
 	ph = (struct proghdr *)((uintptr_t) ELFHDR + ELFHDR->e_phoff);
 	eph = ph + ELFHDR->e_phnum;
 	for (; ph < eph; ph++) {
-		readseg(ph->p_va, ph->p_memsz, ph->p_offset);
+		readseg(ph->p_va & 0xFFFFFF, ph->p_memsz, ph->p_offset);
 	}
 
 	// call the entry point from the ELF header
 	// note: does not return
-	((void (*)(void))(ELFHDR->e_entry)) ();
+	((void (*)(void))(ELFHDR->e_entry & 0xFFFFFF)) ();
 
 bad:
-	uart_puts("Error.\n");
+	// uart_puts("Error: ");
 
 	/* do nothing */
 	while (1) ;

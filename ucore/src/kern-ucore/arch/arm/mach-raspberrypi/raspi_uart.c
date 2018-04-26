@@ -6,17 +6,30 @@
 #include <sync.h>
 #include <board.h>
 #include <assert.h>
+#include <gpio.h>
 #include <picirq.h>
-#include <kio.h>
 #include <barrier.h>
 #include <framebuffer.h>
 
-#define UART1_BASE 0x20215000
-#define AUX_MU_IO_REG (UART1_BASE+0x40)
-#define AUX_MU_IIR_REG (UART1_BASE+0x48)
-#define AUX_MU_LSR_REG (UART1_BASE+0x54)
-#define AUX_MU_LSR_REG_TX_EMPTY 0x20
-#define AUX_MU_LSR_REG_DATA_READY 0x01
+#define UART1_BASE          0x20215000
+
+#define AUX_IRQ             (UART1_BASE + 0x00)
+#define AUX_ENABLES         (UART1_BASE + 0x04)
+#define AUX_MU_IO_REG       (UART1_BASE + 0x40)
+#define AUX_MU_IER_REG      (UART1_BASE + 0x44)
+#define AUX_MU_IIR_REG      (UART1_BASE + 0x48)
+#define AUX_MU_LCR_REG      (UART1_BASE + 0x4C)
+#define AUX_MU_MCR_REG      (UART1_BASE + 0x50)
+#define AUX_MU_LSR_REG      (UART1_BASE + 0x54)
+#define AUX_MU_MSR_REG      (UART1_BASE + 0x58)
+#define AUX_MU_SCRATCH      (UART1_BASE + 0x5C)
+#define AUX_MU_CNTL_REG     (UART1_BASE + 0x60)
+#define AUX_MU_STAT_REG     (UART1_BASE + 0x64)
+#define AUX_MU_BAUD_REG     (UART1_BASE + 0x68)
+
+#define AUX_MU_LSR_REG_TX_EMPTY     0x20
+#define AUX_MU_LSR_REG_DATA_READY   0x01
+
 #define UART1_IRQ 29
 
 static bool serial_exists = 0;
@@ -33,7 +46,30 @@ void serial_init_early()
 {
 	if (serial_exists)
 		return;
-	kprintf("Serial init skipped: already initialized in bootloader\n");
+
+	unsigned int ra;
+
+	outw(AUX_ENABLES, 1);
+	outw(AUX_MU_CNTL_REG, 0);
+	outw(AUX_MU_LCR_REG, 0x3);	// different from manual
+	outw(AUX_MU_MCR_REG, 0);
+	outw(AUX_MU_IER_REG, 0x1);	// enable uart rx interrupt (rx and tx on manual is probably reversed)
+	outw(AUX_MU_IIR_REG, 0xC6);
+	outw(AUX_MU_BAUD_REG, 270);	// see BCM2835 manual section 2.2.1
+
+	ra = inw(GPFSEL1);
+	ra &= ~(7 << 12);   // gpio14
+	ra |= 2 << 12;      // alt5
+	ra &= ~(7 << 15);   // gpio15
+	ra |= 2 << 15;      // alt5
+	outw(GPFSEL1,ra);
+
+	outw(GPPUD, 0);
+	outw(GPPUDCLK0, (1 << 14) | (1 << 15));
+	outw(GPPUDCLK0, 0);
+
+	outw(AUX_MU_CNTL_REG, 3);
+
 	serial_exists = 1;
 
 	fb_init();
@@ -55,11 +91,13 @@ void serial_init_mmu()
 
 static void serial_putc_sub(int c)
 {
-	dmb();
-	while (!(inb(AUX_MU_LSR_REG) & AUX_MU_LSR_REG_TX_EMPTY)) ;
-	dmb();
-	outb(AUX_MU_IO_REG, c);
-	dmb();
+	if (serial_exists) {
+		dmb();
+		while (!(inb(AUX_MU_LSR_REG) & AUX_MU_LSR_REG_TX_EMPTY)) ;
+		dmb();
+		outb(AUX_MU_IO_REG, c);
+		dmb();
+	}
 	fb_write(c);
 	dmb();
 }

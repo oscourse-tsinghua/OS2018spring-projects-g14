@@ -13,14 +13,14 @@ static void put_string(const char *str)
 
 void board_init_early()
 {
+	// init serial
+	serial_init_early();
+
 	put_string(message);
 
 	pic_init();		// init interrupt controller
 	// fixed base and irq
 	clock_init_arm(0, 0);	// linux put tick_init in kernel_main, so do we~
-
-	// init serial
-	serial_init_early();
 }
 
 void board_init()

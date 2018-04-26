@@ -1,6 +1,6 @@
 /*
  * bootlink.lds
- * 
+ *
  * author: YU Kuanlong / HE Alexis
  */
 
@@ -10,24 +10,30 @@ ENTRY(_start)
 SECTIONS
 {
 	. = TEXT_START;
-	.text : 
+
+	.entry :
+	{
+		*bootasm.S.o*(.text .rodata .data)
+	}
+
+	.text :
 	{
 		*(.startup)
-		*(.text) 
+		*(.text)
 		*(.rodata*)
 	}
 
 	. = ALIGN(32);
 
-	.data : 
+	.data :
 	{
 		*(.data)
 	}
-	
+
 	. = ALIGN(32);
-	
+
 	__bss_start__ = .;
-	.bss : 
+	.bss :
 	{
 		*(.bss)
 	}

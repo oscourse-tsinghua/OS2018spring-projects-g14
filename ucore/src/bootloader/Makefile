@@ -17,7 +17,7 @@ HT_SIGN_DIR := $(TOPDIR)/src/ht-sign
 V      ?= @
 
 SRCFILES   := $(shell find . '(' '!' -regex '.*/_.*' ')' -and '(' -iname "*.c" -or -iname "*.S" ')' -and -not -regex '\./arch.*' | sed -e 's!\./!!g')
-T_CC_ALL_FLAGS := -Os -I.
+T_CC_ALL_FLAGS := -Os -I. -include $(KCONFIG_AUTOHEADER)
 
 include arch/${ARCH}/bootloader.mk
 
