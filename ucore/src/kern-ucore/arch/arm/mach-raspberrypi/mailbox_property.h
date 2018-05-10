@@ -1,7 +1,7 @@
 #ifndef RASPBERRYPI_MAILBOX_PROPERTY_H
 #define RASPBERRYPI_MAILBOX_PROPERTY_H
 
-#include <arm.h>
+#include <types.h>
 
 #define MBOX_CHAN_FB			1
 #define MBOX_CHAN_PROPERTY		8
@@ -147,15 +147,38 @@ int mbox_property(uint32_t tag, void *tag_data, size_t buf_size);
 void *mbox_mapmem(uint32_t base, size_t size);
 void mbox_unmapmem(void *addr, size_t size);
 
+// Memory
 uint32_t mbox_mem_alloc(size_t size, size_t align, uint32_t flags);
 int mbox_mem_free(uint32_t handle);
 uint32_t mbox_mem_lock(uint32_t handle);
 int mbox_mem_unlock(uint32_t handle);
 
+// QPU
 int mbox_execute_code(uint32_t code, uint32_t r0, uint32_t r1, uint32_t r2,
 		      uint32_t r3, uint32_t r4, uint32_t r5, uint32_t *out_r0);
 int mbox_execute_qpu(uint32_t num_qpus, uint32_t control, uint32_t noflush,
 		     uint32_t timeout);
 int mbox_qpu_enable(uint32_t enable);
+
+// Frame buffer
+
+struct fb_alloc_tags {
+	struct rpi_firmware_property_tag_header tag1;
+	uint32_t xres, yres;
+	struct rpi_firmware_property_tag_header tag2;
+	uint32_t xres_virtual, yres_virtual;
+	struct rpi_firmware_property_tag_header tag3;
+	uint32_t bpp;
+	struct rpi_firmware_property_tag_header tag4;
+	uint32_t xoffset, yoffset;
+	struct rpi_firmware_property_tag_header tag5;
+	uint32_t base, screen_size;
+	struct rpi_firmware_property_tag_header tag6;
+	uint32_t pitch;
+};
+
+int mbox_framebuffer_get_physical_size(uint32_t *width, uint32_t *height);
+int mbox_framebuffer_get_depth(uint32_t *depth);
+int mbox_framebuffer_alloc(struct fb_alloc_tags *fb_info);
 
 #endif // RASPBERRYPI_MAILBOX_PROPERTY_H

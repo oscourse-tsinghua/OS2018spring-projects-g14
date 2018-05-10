@@ -2,6 +2,8 @@
  * Access system mailboxes
  */
 
+#include <arm.h>
+
 #include "mailbox.h"
 #include "barrier.h"
 

@@ -1,9 +1,11 @@
 #include <unistd.h>
-#include <arm.h>
+#include <assert.h>
+#include <types.h>
 
 #include "mailbox_property.h"
 #include "framebuffer.h"
 #include "vc4_regs.h"
+#include "vc4_packet.h"
 
 // I/O access
 volatile unsigned *v3d;
@@ -96,8 +98,9 @@ static void testTriangle()
 	uint8_t *list = (uint8_t *)mbox_mapmem(bus_addr, 0x800000);
 	uint8_t *p = list;
 
-	uint32_t renderWth = 1920;
-	uint32_t renderHt = 1080;
+	struct fb_info *fb = raspberrypi_fb;
+	uint32_t renderWth = fb->width;
+	uint32_t renderHt = fb->height;
 	uint32_t binWth = (renderWth + 63) / 64; // Tiles across
 	uint32_t binHt = (renderHt + 63) / 64; // Tiles down
 
@@ -247,10 +250,13 @@ static void testTriangle()
 
 	// Tile Rendering Mode Configuration
 	addbyte(&p, 113);
-	addword(&p, raspberrypi_fb->paddr); // framebuffer addresss
+	addword(&p, fb->bus_addr); // framebuffer addresss
 	addshort(&p, renderWth); // width
 	addshort(&p, renderHt); // height
-	addbyte(&p, 0x04); // framebuffer mode (linear rgba8888)
+	addbyte(&p, VC4_SET_FIELD(fb->bits_per_pixel == 16 ?
+					  VC4_RENDER_CONFIG_FORMAT_BGR565 :
+					  VC4_RENDER_CONFIG_FORMAT_RGBA8888,
+				  VC4_RENDER_CONFIG_FORMAT));
 	addbyte(&p, 0x00);
 
 	// Do a store of the first tile to force the tile buffer to be cleared
@@ -347,10 +353,14 @@ static void testTriangle()
 
 	for (y = -6; y < 6; y++) {
 		for (x = -6; x < 6; x++) {
-			uint32_t addr = (y + (int)y4) * renderWth + x + (int)x4;
-			kprintf("%08x ",
-				*((uint32_t *)(raspberrypi_fb->screen_base +
-					       addr * 4)));
+			uint32_t bytes_per_pixel = fb->bits_per_pixel >> 3;
+			uint32_t addr = (y + (int)y4) * fb->pitch +
+					(x + (int)x4) * bytes_per_pixel;
+			uint8_t* ptr = (uint8_t*)fb->screen_base + addr;
+			int k;
+			for (k = bytes_per_pixel - 1; k >= 0; k--)
+				kprintf("%02x", *(ptr + k));
+			kprintf(" ");
 		}
 		kprintf("\n");
 	}
@@ -358,6 +368,11 @@ static void testTriangle()
 
 void vc4_hello_triangle()
 {
+	if (raspberrypi_fb_exist == 0) {
+		kprintf("VC4: no framebuffer found.\n");
+		return;
+	}
+
 	kprintf("Hello VC4 triangle!\n");
 
 	// The blob now has this nice handy call which powers up the v3d pipeline.

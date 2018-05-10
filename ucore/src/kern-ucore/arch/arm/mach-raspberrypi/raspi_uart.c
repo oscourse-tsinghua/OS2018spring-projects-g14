@@ -10,8 +10,6 @@
 #include "board.h"
 #include "gpio.h"
 #include "barrier.h"
-#include "framebuffer.h"
-#include "vc4/vc4_gl.h"
 
 #define UART1_BASE          0x20215000
 
@@ -73,8 +71,6 @@ void serial_init_early()
 	outw(AUX_MU_CNTL_REG, 3);
 
 	serial_exists = 1;
-
-	fb_init();
 }
 
 void serial_init_mmu()
@@ -86,11 +82,6 @@ void serial_init_mmu()
 	// init interrupt
 	register_irq(UART1_IRQ, serial_int_handler, NULL);
 	pic_enable(UART1_IRQ);
-
-	// init framebuffer (mmu)
-	fb_init_mmu();
-
-	vc4_hello_triangle();
 }
 
 static void serial_putc_sub(int c)

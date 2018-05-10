@@ -5,16 +5,14 @@
 #include "barrier.h"
 #include "teletext.h"
 
-/* Use some free memory in the area below the kernel/stack */
-#define BUFFER_ADDRESS 0x1000
-
 /* Screen parameters set in fb_init() */
-static unsigned int fb_x, fb_y, pitch;
 /* Max x/y character cell */
 static unsigned int max_x, max_y;
 
 static struct fb_info __raspberrypi_fb;
-struct fb_info *raspberrypi_fb;
+struct fb_info *raspberrypi_fb = 0;
+
+bool raspberrypi_fb_exist = 0;
 
 /* Framebuffer initialisation failed. Can't display an error, so flashing
  * the OK LED will have to do
@@ -26,156 +24,85 @@ static void fb_fail(unsigned int num)
 	//output(num);
 }
 
-void fb_init_mmu(void)
-{
-	struct fb_info *fb = raspberrypi_fb;
-	if (fb->paddr) {
-		fb->screen_base =
-			__ucore_ioremap(fb->paddr, fb->screen_size, 0);
-		kprintf("GPU addr: %x\n", fb->paddr);
-		kprintf("ARM addr: %x\n", fb->screen_base);
-	}
-}
-
 void fb_init(void)
 {
 	struct fb_info *fb = &__raspberrypi_fb;
 	memset(fb, 0, sizeof(struct fb_info));
 
-	unsigned int var;
-	unsigned int count;
-	volatile unsigned int mailbuffer[32] __attribute__((aligned(16)));
+	uint32_t width, height, depth;
 
-	/* Get the display size */
-	mailbuffer[0] = 8 * 4; // Total size
-	mailbuffer[1] = 0; // Request
-	mailbuffer[2] = 0x40003; // Display size
-	mailbuffer[3] = 8; // Buffer size
-	mailbuffer[4] = 0; // Request size
-	mailbuffer[5] = 0; // Space for horizontal resolution
-	mailbuffer[6] = 0; // Space for vertical resolution
-	mailbuffer[7] = 0; // End tag
-
-	mbox_write(8, (unsigned int)mailbuffer);
-	mbox_read(8);
-
-	/* Valid response in data structure */
-	if (mailbuffer[1] != 0x80000000)
-		kprintf("Framebuffer: mailbox call to get resolution failed\n");
-	/* Mailbox call to get screen resolution failed */
-
-	fb_x = mailbuffer[5];
-	fb_y = mailbuffer[6];
-
-	if (fb_x == 0 || fb_y == 0)
-		kprintf("Framebuffer: mailbox call returned bad resolution\n");
-
-	/* Set up screen */
-
-	mailbuffer[0] = 22 * 4; // Buffer size
-	mailbuffer[1] = 0; // Request
-
-	mailbuffer[2] = 0x00048003; // Tag id (set physical size)
-	mailbuffer[3] = 8; // Value buffer size (bytes)
-	mailbuffer[4] = 8; // Req. + value length (bytes)
-	mailbuffer[5] = fb_x; // Horizontal resolution
-	mailbuffer[6] = fb_y; // Vertical resolution
-
-	mailbuffer[7] = 0x00048004; // Tag id (set virtual size)
-	mailbuffer[8] = 8; // Value buffer size (bytes)
-	mailbuffer[9] = 8; // Req. + value length (bytes)
-	mailbuffer[10] = fb_x; // Horizontal resolution
-	mailbuffer[11] = fb_y; // Vertical resolution
-
-	mailbuffer[12] = 0x00048005; // Tag id (set depth)
-	mailbuffer[13] = 4; // Value buffer size (bytes)
-	mailbuffer[14] = 4; // Req. + value length (bytes)
-	mailbuffer[15] = 32; // 16 bpp
-
-	mailbuffer[16] = 0x00040001; // Tag id (allocate framebuffer)
-	mailbuffer[17] = 8; // Value buffer size (bytes)
-	mailbuffer[18] = 4; // Req. + value length (bytes)
-	mailbuffer[19] = 16; // Alignment = 16
-	mailbuffer[20] = 0; // Space for response
-
-	mailbuffer[21] = 0; // Terminating tag
-
-	mbox_write(8, (unsigned int)mailbuffer);
-	mbox_read(8);
-
-	/* Valid response in data structure */
-	if (mailbuffer[1] != 0x80000000) {
-		kprintf("Framebuffer: mailbox call to set up framebuffer failed\n");
-		return;
+	if (mbox_framebuffer_get_physical_size(&width, &height) != 0) {
+		kprintf("Framebuffer: cannot get physical size!\n");
+		goto fail;
+	}
+	if (mbox_framebuffer_get_depth(&depth) != 0) {
+		kprintf("Framebuffer: cannot get color depth!\n");
+		goto fail;
 	}
 
-	count = 2; /* First tag */
-	while ((var = mailbuffer[count])) {
-		if (var == 0x40001)
-			break;
+	struct fb_alloc_tags fb_data = {
+		.tag1 = { RPI_FIRMWARE_FRAMEBUFFER_SET_PHYSICAL_WIDTH_HEIGHT,
+			  8, 0, },
+			.xres = width,
+			.yres = height,
+		.tag2 = { RPI_FIRMWARE_FRAMEBUFFER_SET_VIRTUAL_WIDTH_HEIGHT,
+			  8, 0, },
+			.xres_virtual = width,
+			.yres_virtual = height,
+		.tag3 = { RPI_FIRMWARE_FRAMEBUFFER_SET_DEPTH, 4, 0 },
+			.bpp = depth,
+		.tag4 = { RPI_FIRMWARE_FRAMEBUFFER_SET_VIRTUAL_OFFSET, 8, 0 },
+			.xoffset = 0,
+			.yoffset = 0,
+		.tag5 = { RPI_FIRMWARE_FRAMEBUFFER_ALLOCATE, 8, 0 },
+			.base = 0,
+			.screen_size = 0,
+		.tag6 = { RPI_FIRMWARE_FRAMEBUFFER_GET_PITCH, 4, 0 },
+			.pitch = 0,
+	};
 
-		/* Skip to next tag
-		 * Advance count by 1 (tag) + 2 (buffer size/value size)
-		 *                          + specified buffer size
-		 */
-		count += 3 + (mailbuffer[count + 1] >> 2);
-
-		if (count > 21) {
-			kprintf("Framebuffer: mailbox call to set up framebuffer "
-				"returned an invalid list of response tabs\n");
-			return;
-		}
+	if (mbox_property_list(&fb_data, sizeof(fb_data)) != 0) {
+		kprintf("Framebuffer: cannot allocate GPU framebuffer.");
+		goto fail;
 	}
 
-	/* 8 bytes, plus MSB set to indicate a response */
-	if (mailbuffer[count + 2] != 0x80000008) {
-		kprintf("Framebuffer: mailbox call returned an invalid response for the framebuffer tag\n");
-		return;
+	if (fb_data.base == 0 || fb_data.screen_size == 0) {
+		kprintf("Framebuffer: mailbox call returned an invalid address/size.\n");
+		goto fail;
+	}
+	if (fb_data.pitch == 0) {
+		kprintf("Framebuffer: mailbox call to set pitch returned an invalid pitch value.\n");
+		goto fail;
 	}
 
-	/* Framebuffer address/size in response */
-	fb->paddr = mailbuffer[count + 3];
-	fb->screen_size = mailbuffer[count + 4];
-
-	if (fb->paddr == 0 || fb->screen_size == 0) {
-		kprintf("Framebuffer: mailbox call returned an invalid address/size\n");
-		return;
-	}
-
-	/* Get the framebuffer pitch (bytes per line) */
-	mailbuffer[0] = 7 * 4; // Total size
-	mailbuffer[1] = 0; // Request
-	mailbuffer[2] = 0x40008; // Display size
-	mailbuffer[3] = 4; // Buffer size
-	mailbuffer[4] = 0; // Request size
-	mailbuffer[5] = 0; // Space for pitch
-	mailbuffer[6] = 0; // End tag
-
-	mbox_write(8, (unsigned int)mailbuffer);
-	mbox_read(8);
-
-	/* 4 bytes, plus MSB set to indicate a response */
-	if (mailbuffer[4] != 0x80000004) {
-		kprintf("Framebuffer: mailbox call to set pitch returned an invalid response\n");
-		return;
-	}
-
-	pitch = mailbuffer[5];
-	if (pitch == 0) {
-		kprintf("Framebuffer: mailbox call to set pitch returned an invalid pitch value\n");
-		return;
-	}
-
-	/* Need to set up max_x/max_y before using fb_write */
-	max_x = fb_x / TELETEXT_W;
-	max_y = fb_y / TELETEXT_H;
+	fb->width = fb_data.xres;
+	fb->height = fb_data.yres;
+	fb->width_virtual = fb_data.xres_virtual;
+	fb->height_virtual = fb_data.yres_virtual;
+	fb->xoffset = fb_data.xoffset;
+	fb->yoffset = fb_data.yoffset;
+	fb->bits_per_pixel = fb_data.bpp;
+	fb->pitch = fb_data.pitch;
+	fb->bus_addr = fb_data.base;
+	fb->screen_size = fb_data.screen_size;
+	fb->screen_base = __ucore_ioremap(fb->bus_addr, fb->screen_size, 0);
 
 	raspberrypi_fb = fb;
+	raspberrypi_fb_exist = 1;
 
-	kprintf("pitch: %d\n", pitch);
+	/* Need to set up max_x/max_y before using fb_write */
+	max_x = fb->width / TELETEXT_W;
+	max_y = fb->height / TELETEXT_H;
 
-	kprintf("Framebuffer initialised. Address = 0x%08x, size = 0x%08x, resolution = %dx%d\n",
-		fb->paddr, fb->screen_size, fb_x, fb_y);
+	kprintf("Framebuffer initialised.\n"
+		"base=0x%08x, resolution=%dx%d, bpp=%d, pitch=%d, size=%d\n",
+		fb->screen_base, fb->width, fb->height, fb->bits_per_pixel, fb->pitch,
+		fb->screen_size);
+
+	return;
+
+fail:
+	kprintf("Framebuffer initialization failed.\n");
 }
 
 /* Current console text cursor position (ie. where the next character will
@@ -199,7 +126,7 @@ static unsigned int colour_sp = 8;
 static void newline(struct fb_info *fb)
 {
 	/* Number of bytes in a character row */
-	register unsigned int rowbytes = TELETEXT_H * pitch;
+	register unsigned int rowbytes = TELETEXT_H * fb->pitch;
 
 	consx = 0;
 	if (consy < (max_y - 1)) {
@@ -222,9 +149,10 @@ static void newline(struct fb_info *fb)
  */
 void fb_write(unsigned char ch) //char *text)
 {
-	struct fb_info *fb = raspberrypi_fb;
-	if (!fb->screen_base)
+	if (raspberrypi_fb_exist == 0)
 		return;
+
+	struct fb_info *fb = raspberrypi_fb;
 
 	if (ch == 13) {
 		//do nothing
@@ -242,16 +170,14 @@ void fb_write(unsigned char ch) //char *text)
 		 */
 		int row, col;
 		for (row = 0; row < TELETEXT_H; row++) {
-			unsigned int addr = (row + consy * TELETEXT_H) * pitch +
-					    consx * TELETEXT_W * 4;
-			volatile unsigned int *ptr =
-				(unsigned int *)(fb->screen_base + addr);
+			uint32_t bytes_per_pixel = fb->bits_per_pixel >> 3;
+			uint32_t addr = (row + consy * TELETEXT_H) * fb->pitch +
+					consx * TELETEXT_W * bytes_per_pixel;
+			uint8_t *ptr = (uint8_t *)fb->screen_base + addr;
 			for (col = TELETEXT_W - 1; col >= 0; col--) {
 				if (teletext[ch][row] & (1 << col))
-					*ptr = fgcolour;
-				// else
-				// 	*ptr = bgcolour;
-				ptr++;
+					memcpy(ptr, &fgcolour, bytes_per_pixel);
+				ptr += bytes_per_pixel;
 			}
 		}
 

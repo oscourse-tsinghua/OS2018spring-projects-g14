@@ -3,6 +3,9 @@
 #include <serial.h>
 #include <clock.h>
 
+#include "framebuffer.h"
+#include "vc4/vc4_gl.h"
+
 static const char *message = "Initializing Raspberry Pi Board...\n";
 
 static void put_string(const char *str)
@@ -26,6 +29,8 @@ void board_init_early()
 void board_init()
 {
 	serial_init_mmu();
+	fb_init();
+	vc4_hello_triangle();
 }
 
 /* no nand */

@@ -133,3 +133,29 @@ int mbox_execute_qpu(uint32_t num_qpus, uint32_t control, uint32_t noflush,
 	int ret = mbox_property(RPI_FIRMWARE_EXECUTE_QPU, data, sizeof(data));
 	return ret;
 }
+
+int mbox_framebuffer_get_physical_size(uint32_t *width, uint32_t *height)
+{
+	uint32_t data[2] = { *width, *height };
+	int ret = mbox_property(
+		RPI_FIRMWARE_FRAMEBUFFER_GET_PHYSICAL_WIDTH_HEIGHT, data,
+		sizeof(data));
+	*width = data[0];
+	*height = data[1];
+	return ret;
+}
+
+int mbox_framebuffer_get_depth(uint32_t *depth)
+{
+	uint32_t data[1] = { *depth };
+	int ret = mbox_property(RPI_FIRMWARE_FRAMEBUFFER_GET_DEPTH, data,
+				sizeof(data));
+	*depth = data[0];
+	return ret;
+}
+
+int mbox_framebuffer_alloc(struct fb_alloc_tags *fb_info)
+{
+	int ret = mbox_property_list(fb_info, sizeof(struct fb_alloc_tags));
+	return ret;
+}
