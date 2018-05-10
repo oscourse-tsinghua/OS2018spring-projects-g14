@@ -56,9 +56,8 @@ void fb_init(void)
 	mailbuffer[6] = 0; // Space for vertical resolution
 	mailbuffer[7] = 0; // End tag
 
-	writemailbox(8, (unsigned int)mailbuffer);
-
-	var = readmailbox(8);
+	mbox_write(8, (unsigned int)mailbuffer);
+	mbox_read(8);
 
 	/* Valid response in data structure */
 	if (mailbuffer[1] != 0x80000000)
@@ -101,9 +100,8 @@ void fb_init(void)
 
 	mailbuffer[21] = 0; // Terminating tag
 
-	writemailbox(8, (unsigned int)mailbuffer);
-
-	var = readmailbox(8);
+	mbox_write(8, (unsigned int)mailbuffer);
+	mbox_read(8);
 
 	/* Valid response in data structure */
 	if (mailbuffer[1] != 0x80000000) {
@@ -153,9 +151,8 @@ void fb_init(void)
 	mailbuffer[5] = 0; // Space for pitch
 	mailbuffer[6] = 0; // End tag
 
-	writemailbox(8, (unsigned int)mailbuffer);
-
-	var = readmailbox(8);
+	mbox_write(8, (unsigned int)mailbuffer);
+	mbox_read(8);
 
 	/* 4 bytes, plus MSB set to indicate a response */
 	if (mailbuffer[4] != 0x80000004) {

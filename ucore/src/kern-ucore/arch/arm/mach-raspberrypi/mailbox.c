@@ -1,30 +1,48 @@
 /*
  * Access system mailboxes
  */
+
 #include "mailbox.h"
 #include "barrier.h"
 
-/* Mailbox memory addresses */
-static volatile unsigned int *MAILBOX0READ = (unsigned int *)0x2000b880;
-static volatile unsigned int *MAILBOX0STATUS = (unsigned int *)0x2000b898;
-static volatile unsigned int *MAILBOX0WRITE = (unsigned int *)0x2000b8a0;
+#define MAILBOX_BASE		0x2000b880
+
+/* Mailboxes */
+#define ARM_0_MAIL0		(MAILBOX_BASE + 0x00)
+#define ARM_0_MAIL1		(MAILBOX_BASE + 0x20)
+
+/*
+ * Mailbox registers. We basically only support mailbox 0 & 1. We
+ * deliver to the VC in mailbox 1, it delivers to us in mailbox 0. See
+ * BCM2835-ARM-Peripherals.pdf section 1.3 for an explanation about
+ * the placement of memory barriers.
+ */
+#define MAIL0_RD		(ARM_0_MAIL0 + 0x00)
+#define MAIL0_POL		(ARM_0_MAIL0 + 0x10)
+#define MAIL0_STA		(ARM_0_MAIL0 + 0x18)
+#define MAIL0_CNF		(ARM_0_MAIL0 + 0x1C)
+#define MAIL1_WRT		(ARM_0_MAIL1 + 0x00)
+#define MAIL1_STA		(ARM_0_MAIL1 + 0x18)
 
 /* Bit 31 set in status register if the write mailbox is full */
-#define MAILBOX_FULL 0x80000000
-
 /* Bit 30 set in status register if the read mailbox is empty */
-#define MAILBOX_EMPTY 0x40000000
+#define MAILBOX_FULL		(1 << 31)
+#define MAILBOX_EMPTY		(1 << 30)
 
-unsigned int readmailbox(unsigned int channel)
+#define MBOX_MSG(chan, data28)		(((data28) & ~0xf) | ((chan) & 0xf))
+#define MBOX_CHAN(msg)			((msg) & 0xf)
+#define MBOX_DATA28(msg)		((msg) & ~0xf)
+
+uint32_t mbox_read(uint32_t channel)
 {
-	unsigned int count = 0;
-	unsigned int data;
+	uint32_t count = 0;
+	uint32_t data;
 
 	/* Loop until something is received from channel
 	 * If nothing recieved, it eventually give up and returns 0xffffffff
 	 */
 	while (1) {
-		while (*MAILBOX0STATUS & MAILBOX_EMPTY) {
+		while (inw(MAIL0_STA) & MAILBOX_EMPTY) {
 			/* Need to check if this is the right thing to do */
 			flushcache();
 
@@ -37,22 +55,22 @@ unsigned int readmailbox(unsigned int channel)
 		 * Data memory barriers as we've switched peripheral
 		 */
 		dmb();
-		data = *MAILBOX0READ;
+		data = inw(MAIL0_RD);
 		dmb();
 
-		if ((data & 15) == channel)
-			return data;
+		if (MBOX_CHAN(data) == channel)
+			return MBOX_DATA28(data);
 	}
 }
 
-void writemailbox(unsigned int channel, unsigned int data)
+void mbox_write(uint32_t channel, uint32_t data)
 {
 	/* Wait for mailbox to be not full */
-	while (*MAILBOX0STATUS & MAILBOX_FULL) {
+	while (inw(MAIL1_STA) & MAILBOX_FULL) {
 		/* Need to check if this is the right thing to do */
 		flushcache();
 	}
 
 	dmb();
-	*MAILBOX0WRITE = (data | channel);
+	outw(MAIL1_WRT, MBOX_MSG(channel, data));
 }

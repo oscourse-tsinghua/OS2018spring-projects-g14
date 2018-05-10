@@ -80,16 +80,20 @@ static void testTriangle()
 	// Like above, we allocate/lock/map some videocore memory
 	// I'm just shoving everything in a single buffer because I'm lazy
 	// 8Mb, 4k alignment
-	unsigned int handle = mbox_mem_alloc(0x800000, 0x1000,
-					     MEM_FLAG_COHERENT | MEM_FLAG_ZERO);
-
+	uint32_t handle = mbox_mem_alloc(0x800000, 0x1000,
+					 MEM_FLAG_COHERENT | MEM_FLAG_ZERO);
 	if (!handle) {
-		kprintf("Error: Unable to allocate memory");
+		kprintf("VC4: unable to allocate memory.\n");
 		return;
 	}
-	uint32_t bus_addr = mbox_mem_lock(handle);
-	uint8_t *list = (uint8_t *)mbox_mapmem(bus_addr, 0x800000);
 
+	uint32_t bus_addr = mbox_mem_lock(handle);
+	if (!bus_addr) {
+		kprintf("VC4: unable to lock memory at %08x.\n", handle);
+		return;
+	}
+
+	uint8_t *list = (uint8_t *)mbox_mapmem(bus_addr, 0x800000);
 	uint8_t *p = list;
 
 	uint32_t renderWth = 1920;
@@ -174,7 +178,7 @@ static void testTriangle()
 	addword(&p, vertex_data_base); // Vertex Data
 
 	// Vertex Data
-	p = (uint8_t *)mbox_mapmem(vertex_data_size, vertex_data_size);
+	p = (uint8_t *)mbox_mapmem(vertex_data_base, vertex_data_size);
 
 	float sqrt3 = 1.7320508075688772f;
 	float sqrt6 = 2.449489742783178;
@@ -297,7 +301,7 @@ static void testTriangle()
 		;
 
 	// Run our control list
-	kprintf("Binner control list constructed\n");
+	kprintf("Binner control list constructed.\n");
 	kprintf("Start Address: 0x%08x, length: 0x%x\n", bus_addr, length);
 
 	v3d[V3D_BFC] = 1; // reset binning frame count
@@ -335,10 +339,21 @@ static void testTriangle()
 
 	// Release resources
 	mbox_unmapmem((void *)list, 0x800000);
+
 	mbox_mem_unlock(handle);
 	mbox_mem_free(handle);
 	mbox_mem_unlock(vertex_data_base);
 	mbox_mem_free(vertex_data_base);
+
+	for (y = -6; y < 6; y++) {
+		for (x = -6; x < 6; x++) {
+			uint32_t addr = (y + (int)y4) * renderWth + x + (int)x4;
+			kprintf("%08x ",
+				*((uint32_t *)(raspberrypi_fb->screen_base +
+					       addr * 4)));
+		}
+		kprintf("\n");
+	}
 }
 
 void vc4_hello_triangle()
@@ -346,13 +361,18 @@ void vc4_hello_triangle()
 	kprintf("Hello VC4 triangle!\n");
 
 	// The blob now has this nice handy call which powers up the v3d pipeline.
-	int x = mbox_qpu_enable(1);
+	int ret = mbox_qpu_enable(1);
+	if (ret != 0) {
+		kprintf("VC4: cannot enable qpu.\n");
+		return;
+	}
 
 	// map v3d's registers into our address space.
 	v3d = (unsigned *)0x20c00000;
 
 	if (v3d[V3D_IDENT0] != 0x02443356) { // Magic number.
-		kprintf("Error: V3D pipeline isn't powered up and accessable.\n");
+		kprintf("VC4: V3D pipeline isn't powered up and accessable.\n");
+		return;
 	}
 
 	// We now have access to the v3d registers, we should do something.

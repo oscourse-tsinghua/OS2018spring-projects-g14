@@ -1,41 +1,64 @@
-/*
-Copyright (c) 2012, Broadcom Europe Ltd.
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions are met:
-    * Redistributions of source code must retain the above copyright
-      notice, this list of conditions and the following disclaimer.
-    * Redistributions in binary form must reproduce the above copyright
-      notice, this list of conditions and the following disclaimer in the
-      documentation and/or other materials provided with the distribution.
-    * Neither the name of the copyright holder nor the
-      names of its contributors may be used to endorse or promote products
-      derived from this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY
-DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-*/
+#include <error.h>
 
 #include "mailbox.h"
 #include "mailbox_property.h"
 
 #define PAGE_SIZE (4 * 1024)
+#define MAX_MESSAGE_BUFFER_SIZE (4096)
 
-void *mbox_mapmem(unsigned int base, unsigned int size)
+int mbox_property_list(void *data, size_t tag_size)
+{
+	size_t size = tag_size + 12;
+	uint32_t __attribute__((aligned(16))) buf[MAX_MESSAGE_BUFFER_SIZE / 4];
+	if (size >= MAX_MESSAGE_BUFFER_SIZE) {
+		kprintf("Mailbox: messages are too long.\n");
+		return -E_INVAL;
+	}
+
+	buf[0] = size;
+	buf[1] = RPI_FIRMWARE_STATUS_REQUEST;
+	memcpy(&buf[2], data, tag_size);
+	buf[size / 4 - 1] = RPI_FIRMWARE_PROPERTY_END;
+
+	mbox_write(MBOX_CHAN_PROPERTY, (uint32_t)buf);
+	mbox_read(MBOX_CHAN_PROPERTY);
+
+	if (buf[1] != RPI_FIRMWARE_STATUS_SUCCESS) {
+		kprintf("Mailbox: request 0x%08x returned status 0x%08x.\n",
+			buf[2], buf[1]);
+		return -E_INVAL;
+	}
+
+	memcpy(data, &buf[2], tag_size);
+	return 0;
+}
+
+int mbox_property(uint32_t tag, void *tag_data, size_t buf_size)
+{
+	uint8_t data[buf_size + sizeof(struct rpi_firmware_property_tag_header)];
+	struct rpi_firmware_property_tag_header *header =
+		(struct rpi_firmware_property_tag_header *)data;
+	int ret = 0;
+
+	header->tag = tag;
+	header->buf_size = buf_size;
+	header->req_resp_size = 0;
+	memcpy(data + sizeof(struct rpi_firmware_property_tag_header), tag_data,
+	       buf_size);
+
+	ret = mbox_property_list(data, sizeof(data));
+	memcpy(tag_data, data + sizeof(struct rpi_firmware_property_tag_header),
+	       buf_size);
+
+	return ret;
+}
+
+void *mbox_mapmem(uint32_t base, size_t size)
 {
 	// FIXME
 	kprintf("mapmem before: %x\n", base);
 
-	unsigned offset = base % PAGE_SIZE;
+	uint32_t offset = base % PAGE_SIZE;
 	base = base - offset;
 	base = __ucore_ioremap(base, size, 0);
 
@@ -43,165 +66,70 @@ void *mbox_mapmem(unsigned int base, unsigned int size)
 	return (char *)base + offset;
 }
 
-void mbox_unmapmem(void *addr, unsigned int size)
+void mbox_unmapmem(void *addr, size_t size)
 {
 	// FIXME unimplemented
 }
 
-static void mbox_property(void *buf)
+uint32_t mbox_mem_alloc(size_t size, size_t align, uint32_t flags)
 {
-	volatile unsigned int mailbuffer[32] __attribute__((aligned(16)));
-	memcpy(mailbuffer, buf, sizeof(mailbuffer));
-
-	writemailbox(8, (unsigned int)mailbuffer);
+	uint32_t data[3] = { size, align, flags };
+	int ret =
+		mbox_property(RPI_FIRMWARE_ALLOCATE_MEMORY, data, sizeof(data));
+	if (ret != 0)
+		return 0;
+	return data[0];
 }
 
-unsigned int mbox_mem_alloc(unsigned int size, unsigned int align,
-			    unsigned int flags)
+int mbox_mem_free(uint32_t handle)
 {
-	int i = 0;
-	unsigned int p[32];
-	p[i++] = 0; // size
-	p[i++] = 0x00000000; // process request
-
-	p[i++] = 0x3000c; // (the tag id)
-	p[i++] = 12; // (size of the buffer)
-	p[i++] = 12; // (size of the data)
-	p[i++] = size; // (num bytes? or pages?)
-	p[i++] = align; // (alignment)
-	p[i++] = flags; // (MEM_FLAG_L1_NONALLOCATING)
-
-	p[i++] = 0x00000000; // end tag
-	p[0] = i * sizeof *p; // actual size
-
-	mbox_property(p);
-	return p[5];
+	uint32_t data[1] = { handle };
+	int ret =
+		mbox_property(RPI_FIRMWARE_RELEASE_MEMORY, data, sizeof(data));
+	if (data[0] != 0)
+		ret = -E_INVAL;
+	return ret;
 }
 
-unsigned int mbox_mem_free(unsigned int handle)
+uint32_t mbox_mem_lock(uint32_t handle)
 {
-	int i = 0;
-	unsigned p[32];
-	p[i++] = 0; // size
-	p[i++] = 0x00000000; // process request
-
-	p[i++] = 0x3000f; // (the tag id)
-	p[i++] = 4; // (size of the buffer)
-	p[i++] = 4; // (size of the data)
-	p[i++] = handle;
-
-	p[i++] = 0x00000000; // end tag
-	p[0] = i * sizeof *p; // actual size
-
-	mbox_property(p);
-	return p[5];
+	uint32_t data[1] = { handle };
+	int ret = mbox_property(RPI_FIRMWARE_LOCK_MEMORY, data, sizeof(data));
+	if (ret != 0)
+		return 0;
+	return data[0];
 }
 
-unsigned int mbox_mem_lock(unsigned int handle)
+int mbox_mem_unlock(uint32_t handle)
 {
-	int i = 0;
-	unsigned int p[32];
-	p[i++] = 0; // size
-	p[i++] = 0x00000000; // process request
-
-	p[i++] = 0x3000d; // (the tag id)
-	p[i++] = 4; // (size of the buffer)
-	p[i++] = 4; // (size of the data)
-	p[i++] = handle;
-
-	p[i++] = 0x00000000; // end tag
-	p[0] = i * sizeof *p; // actual size
-
-	mbox_property(p);
-	return p[5];
+	uint32_t data[1] = { handle };
+	int ret = mbox_property(RPI_FIRMWARE_UNLOCK_MEMORY, data, sizeof(data));
+	if (data[0] != 0)
+		ret = -E_INVAL;
+	return ret;
 }
 
-unsigned int mbox_mem_unlock(unsigned int handle)
+int mbox_execute_code(uint32_t code, uint32_t r0, uint32_t r1, uint32_t r2,
+		      uint32_t r3, uint32_t r4, uint32_t r5, uint32_t *out_r0)
 {
-	int i = 0;
-	unsigned int p[32];
-	p[i++] = 0; // size
-	p[i++] = 0x00000000; // process request
-
-	p[i++] = 0x3000e; // (the tag id)
-	p[i++] = 4; // (size of the buffer)
-	p[i++] = 4; // (size of the data)
-	p[i++] = handle;
-
-	p[i++] = 0x00000000; // end tag
-	p[0] = i * sizeof *p; // actual size
-
-	mbox_property(p);
-	return p[5];
+	uint32_t data[7] = { code, r0, r1, r2, r3, r4, r5 };
+	int ret = mbox_property(RPI_FIRMWARE_EXECUTE_CODE, data, sizeof(data));
+	*out_r0 = data[0];
+	return ret;
 }
 
-unsigned int mbox_execute_code(unsigned int code, unsigned int r0,
-			       unsigned int r1, unsigned int r2,
-			       unsigned int r3, unsigned int r4,
-			       unsigned int r5)
+int mbox_qpu_enable(uint32_t enable)
 {
-	int i = 0;
-	unsigned int p[32];
-	p[i++] = 0; // size
-	p[i++] = 0x00000000; // process request
-
-	p[i++] = 0x30010; // (the tag id)
-	p[i++] = 28; // (size of the buffer)
-	p[i++] = 28; // (size of the data)
-	p[i++] = code;
-	p[i++] = r0;
-	p[i++] = r1;
-	p[i++] = r2;
-	p[i++] = r3;
-	p[i++] = r4;
-	p[i++] = r5;
-
-	p[i++] = 0x00000000; // end tag
-	p[0] = i * sizeof *p; // actual size
-
-	mbox_property(p);
-	return p[5];
+	uint32_t data[1] = { enable };
+	int ret =
+		mbox_property(RPI_FIRMWARE_SET_ENABLE_QPU, data, sizeof(data));
+	return ret;
 }
 
-unsigned int mbox_qpu_enable(unsigned int enable)
+int mbox_execute_qpu(uint32_t num_qpus, uint32_t control, uint32_t noflush,
+		     uint32_t timeout)
 {
-	int i = 0;
-	unsigned p[32];
-
-	p[i++] = 0; // size
-	p[i++] = 0x00000000; // process request
-
-	p[i++] = 0x30012; // (the tag id)
-	p[i++] = 4; // (size of the buffer)
-	p[i++] = 4; // (size of the data)
-	p[i++] = enable;
-
-	p[i++] = 0x00000000; // end tag
-	p[0] = i * sizeof *p; // actual size
-
-	mbox_property(p);
-	return p[5];
-}
-
-unsigned int mbox_execute_qpu(unsigned int num_qpus, unsigned int control,
-			      unsigned int noflush, unsigned int timeout)
-{
-	int i = 0;
-	unsigned int p[32];
-
-	p[i++] = 0; // size
-	p[i++] = 0x00000000; // process request
-	p[i++] = 0x30011; // (the tag id)
-	p[i++] = 16; // (size of the buffer)
-	p[i++] = 16; // (size of the data)
-	p[i++] = num_qpus;
-	p[i++] = control;
-	p[i++] = noflush;
-	p[i++] = timeout; // ms
-
-	p[i++] = 0x00000000; // end tag
-	p[0] = i * sizeof *p; // actual size
-
-	mbox_property(p);
-	return p[5];
+	uint32_t data[4] = { num_qpus, control, noflush, timeout };
+	int ret = mbox_property(RPI_FIRMWARE_EXECUTE_QPU, data, sizeof(data));
+	return ret;
 }
