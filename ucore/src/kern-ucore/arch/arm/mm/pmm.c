@@ -80,7 +80,7 @@ static void init_pmm_manager(void)
 	pmm_manager->init();
 }
 
-//init_memmap - call pmm->init_memmap to build Page struct for free memory  
+//init_memmap - call pmm->init_memmap to build Page struct for free memory
 static void init_memmap(struct Page *base, size_t n)
 {
 	pmm_manager->init_memmap(base, n);
@@ -99,7 +99,7 @@ void pmm_init_ap(void)
 	get_cpu_var(used_pages) = 0;
 }
 
-//alloc_pages - call pmm->alloc_pages to allocate a continuous n*PAGESIZE memory 
+//alloc_pages - call pmm->alloc_pages to allocate a continuous n*PAGESIZE memory
 struct Page *alloc_pages(size_t n)
 {
 	bool intr_flag;
@@ -114,7 +114,7 @@ struct Page *alloc_pages(size_t n)
 	return page;
 }
 
-//free_pages - call pmm->free_pages to free a continuous n*PAGESIZE memory 
+//free_pages - call pmm->free_pages to free a continuous n*PAGESIZE memory
 void free_pages(struct Page *base, size_t n)
 {
 	bool intr_flag;
@@ -126,7 +126,7 @@ void free_pages(struct Page *base, size_t n)
 	get_cpu_var(used_pages) -= n;
 }
 
-//nr_free_pages - call pmm->nr_free_pages to get the size (nr*PAGESIZE) 
+//nr_free_pages - call pmm->nr_free_pages to get the size (nr*PAGESIZE)
 //of current free memory
 size_t nr_free_pages(void)
 {
@@ -220,7 +220,7 @@ static void page_init(void)
 //  la:   linear address of this memory need to map
 //  size: memory size
 //  pa:   physical address of this memory
-//  perm: permission of this memory  
+//  perm: permission of this memory
 static void
 boot_map_segment(pde_t * pgdir, uintptr_t la, size_t size, uintptr_t pa,
 		 uint32_t perm)
@@ -245,10 +245,22 @@ void __boot_map_iomem(uintptr_t la, size_t size, uintptr_t pa)
 	boot_map_segment(boot_pgdir, la, size, pa, PTE_W | PTE_IOMEM);
 }
 
-//boot_alloc_page - allocate pages for the PDT 
+void __boot_unmap_iomem(uintptr_t la, size_t size)
+{
+	size_t n = ROUNDUP(size + PGOFF(la), PGSIZE) / PGSIZE;
+	la = ROUNDDOWN(la, PGSIZE);
+	for (; n > 0; n--, la += PGSIZE) {
+		pte_t *ptep = get_pte(boot_pgdir, la, 0);
+		if (ptep != NULL) {
+			ptep_unmap(ptep);
+		}
+	}
+}
+
+//boot_alloc_page - allocate pages for the PDT
 // return value: the kernel virtual address of this allocated page
 //note: this function is used to get the memory for PDT(Page Directory Table)
-// The is only one PDT of size 16kB, hence 4 pages. However, if table is not 
+// The is only one PDT of size 16kB, hence 4 pages. However, if table is not
 // on aligned to 16kb, there will be a bug. We allocated 6 pages
 // to make sure we have the margin to align correctly the pdt.
 static void *boot_alloc_page(void)
@@ -260,14 +272,14 @@ static void *boot_alloc_page(void)
 	return page2kva(p);
 }
 
-//pmm_init - setup a pmm to manage physical memory, build PDT&PT to setup paging mechanism 
+//pmm_init - setup a pmm to manage physical memory, build PDT&PT to setup paging mechanism
 //         - check the correctness of pmm & paging mechanism, print PDT&PT
 void pmm_init(void)
 {
-	//We need to alloc/free the physical memory (granularity is 4KB or other size). 
+	//We need to alloc/free the physical memory (granularity is 4KB or other size).
 	//So a framework of physical memory manager (struct pmm_manager)is defined in pmm.h
 	//First we should init a physical memory manager(pmm) based on the framework.
-	//Then pmm can alloc/free the physical memory. 
+	//Then pmm can alloc/free the physical memory.
 	//Now the first_fit/best_fit/worst_fit/buddy_system pmm are available.
 	init_pmm_manager();
 
@@ -300,8 +312,8 @@ void pmm_init(void)
 
 	// recursively insert boot_pgdir in itself
 	// to form a virtual page table at virtual address VPT
-	// The trick, however, is that we have to initialize up 
-	// to L2 tables, hence the use of get_pte to write 
+	// The trick, however, is that we have to initialize up
+	// to L2 tables, hence the use of get_pte to write
 	// the PDT entries of where boot_pgdir is.
 	// PDT is 16kb, so we need to set 4 PTE
 	// objective: get_pte(boot_pgdir, VPT, 1) == boot_pgdir;
@@ -376,7 +388,8 @@ void pmm_init(void)
 	mmu_init();
 
 	/* ioremap */
-	board_init();
+	// FIXME temporary
+	// board_init();
 
 	kprintf("mmu enabled.\n");
 	print_pgdir(kprintf);
@@ -394,6 +407,9 @@ void pmm_init(void)
 	slab_init();
 
 	kprintf("slab_init() done\n");
+
+	// FIXME temporary
+	board_init();
 
 	/*
 	 * Add by whn09, map 0xffff0fa0!
@@ -417,7 +433,7 @@ void pmm_init(void)
 	 */
 }
 
-// invalidate both TLB 
+// invalidate both TLB
 // (clean and flush, meaning we write the data back)
 void tlb_invalidate(pde_t * pgdir, uintptr_t la)
 {
@@ -456,9 +472,9 @@ void tlb_clean_flush(pde_t * pgdir, uintptr_t la)
  * */
 void load_rsp0(uintptr_t esp0)
 {
-	/* 
+	/*
 	 * no such equivalence in ARM
-	 * This means that kernel routines share a predefined 
+	 * This means that kernel routines share a predefined
 	 * stack for each mode
 	 * */
 }
@@ -613,7 +629,7 @@ static void check_boot_pgdir(void)
 	strcpy((void *)0x100, str);
 	assert(strcmp((void *)0x100, (void *)(0x100 + PGSIZE)) == 0);
 
-	// write directly in the page in memory (fixed address), 
+	// write directly in the page in memory (fixed address),
 	// we should see it in the first region
 	*(char *)(page2kva(p) + 0x100) = '\0';
 	assert(strlen((const char *)0x100) == 0);
@@ -648,7 +664,7 @@ static const char *perm2str(int perm)
 //  left_store:  the pointer of the high side of table's next range
 //  right_store: the pointer of the low side of table's next range
 //  mask:                a mask to get perm: 0x3FF for PDT (at least get domain), PTE_UW for PT
-// return value: 0 - not a invalid item range, perm - a valid item range with perm permission 
+// return value: 0 - not a invalid item range, perm - a valid item range with perm permission
 static int
 get_pgtable_items(size_t left, size_t right, size_t start, uintptr_t * table,
 		  size_t * left_store, size_t * right_store, size_t mask)
@@ -759,4 +775,11 @@ void *__ucore_ioremap(unsigned long phys_addr, size_t size, unsigned int mtype)
 
 	tlb_invalidate_all();
 	return (void *)oldaddr;
+}
+
+void __ucore_iounmap(void *vaddr, size_t size)
+{
+	size = ROUNDUP(size, PGSIZE);
+	__boot_unmap_iomem((uintptr_t)vaddr, size);
+	tlb_invalidate_all();
 }

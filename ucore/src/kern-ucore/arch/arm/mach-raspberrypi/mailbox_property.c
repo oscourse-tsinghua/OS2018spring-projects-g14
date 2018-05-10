@@ -3,7 +3,6 @@
 #include "mailbox.h"
 #include "mailbox_property.h"
 
-#define PAGE_SIZE (4 * 1024)
 #define MAX_MESSAGE_BUFFER_SIZE (4096)
 
 int mbox_property_list(void *data, size_t tag_size)
@@ -51,24 +50,6 @@ int mbox_property(uint32_t tag, void *tag_data, size_t buf_size)
 	       buf_size);
 
 	return ret;
-}
-
-void *mbox_mapmem(uint32_t base, size_t size)
-{
-	// FIXME
-	kprintf("mapmem before: %x\n", base);
-
-	uint32_t offset = base % PAGE_SIZE;
-	base = base - offset;
-	base = __ucore_ioremap(base, size, 0);
-
-	kprintf("mapmem after: %x\n", base);
-	return (char *)base + offset;
-}
-
-void mbox_unmapmem(void *addr, size_t size)
-{
-	// FIXME unimplemented
 }
 
 uint32_t mbox_mem_alloc(size_t size, size_t align, uint32_t flags)

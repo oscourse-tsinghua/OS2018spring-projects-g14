@@ -2,8 +2,8 @@
 #include <assert.h>
 #include <types.h>
 
-#include "mailbox_property.h"
 #include "framebuffer.h"
+#include "vc4_drv.h"
 #include "vc4_regs.h"
 #include "vc4_packet.h"
 
@@ -82,20 +82,13 @@ static void testTriangle()
 	// Like above, we allocate/lock/map some videocore memory
 	// I'm just shoving everything in a single buffer because I'm lazy
 	// 8Mb, 4k alignment
-	uint32_t handle = mbox_mem_alloc(0x800000, 0x1000,
-					 MEM_FLAG_COHERENT | MEM_FLAG_ZERO);
-	if (!handle) {
-		kprintf("VC4: unable to allocate memory.\n");
+	struct vc4_bo *cl = vc4_bo_create(0x800000, 0x1000);
+	if (cl == NULL) {
 		return;
 	}
 
-	uint32_t bus_addr = mbox_mem_lock(handle);
-	if (!bus_addr) {
-		kprintf("VC4: unable to lock memory at %08x.\n", handle);
-		return;
-	}
-
-	uint8_t *list = (uint8_t *)mbox_mapmem(bus_addr, 0x800000);
+	uint32_t bus_addr = cl->paddr;
+	uint8_t *list = cl->vaddr;
 	uint8_t *p = list;
 
 	struct fb_info *fb = raspberrypi_fb;
@@ -174,14 +167,14 @@ static void testTriangle()
 	addword(&p,
 		bus_addr + BUFFER_FRAGMENT_UNIFORM); // Fragment shader uniforms
 
-	unsigned int vertex_data_size = 12 * 24;
-	unsigned int vertex_data_base = mbox_mem_alloc(
-		vertex_data_size, 0x10, MEM_FLAG_COHERENT | MEM_FLAG_ZERO);
-	vertex_data_base = mbox_mem_lock(vertex_data_base);
-	addword(&p, vertex_data_base); // Vertex Data
+	struct vc4_bo *vertex_data = vc4_bo_create(12 * 24, 0x10);
+	if (vertex_data == NULL) {
+		return;
+	}
+	addword(&p, vertex_data->paddr); // Vertex Data
 
 	// Vertex Data
-	p = (uint8_t *)mbox_mapmem(vertex_data_base, vertex_data_size);
+	p = vertex_data->vaddr;
 
 	float sqrt3 = 1.7320508075688772f;
 	float sqrt6 = 2.449489742783178;
@@ -344,19 +337,15 @@ static void testTriangle()
 		v3d[V3D_CT1CA]);
 
 	// Release resources
-	mbox_unmapmem((void *)list, 0x800000);
-
-	mbox_mem_unlock(handle);
-	mbox_mem_free(handle);
-	mbox_mem_unlock(vertex_data_base);
-	mbox_mem_free(vertex_data_base);
+	vc4_bo_destroy(vertex_data);
+	vc4_bo_destroy(cl);
 
 	for (y = -6; y < 6; y++) {
 		for (x = -6; x < 6; x++) {
 			uint32_t bytes_per_pixel = fb->bits_per_pixel >> 3;
 			uint32_t addr = (y + (int)y4) * fb->pitch +
 					(x + (int)x4) * bytes_per_pixel;
-			uint8_t* ptr = (uint8_t*)fb->screen_base + addr;
+			uint8_t *ptr = (uint8_t *)fb->screen_base + addr;
 			int k;
 			for (k = bytes_per_pixel - 1; k >= 0; k--)
 				kprintf("%02x", *(ptr + k));

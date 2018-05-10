@@ -144,9 +144,6 @@ enum mbox_alloc_mem_flags {
 int mbox_property_list(void *data, size_t tag_size);
 int mbox_property(uint32_t tag, void *tag_data, size_t buf_size);
 
-void *mbox_mapmem(uint32_t base, size_t size);
-void mbox_unmapmem(void *addr, size_t size);
-
 // Memory
 uint32_t mbox_mem_alloc(size_t size, size_t align, uint32_t flags);
 int mbox_mem_free(uint32_t handle);

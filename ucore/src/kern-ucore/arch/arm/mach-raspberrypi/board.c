@@ -29,6 +29,8 @@ void board_init_early()
 void board_init()
 {
 	serial_init_mmu();
+
+	// FIXME temporary
 	fb_init();
 	vc4_hello_triangle();
 }
