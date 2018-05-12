@@ -18,6 +18,7 @@ KERNEL_TEXT_PHY_BASE := $(shell printf "%08x\n" $$(($(UCONFIG_DRAM_START)+0x8000
 
 KERNEL_ELF := $(KTREE_OBJ_ROOT)/kernel-$(ARCH).elf
 KERNEL_IMAGE := $(OBJPATH_ROOT)/kernel.img
+KERNEL_UIMAGE := $(OBJPATH_ROOT)/kernel.img
 LINK_FILE_IN	:= $(KTREE)/arch/${ARCH}/ucore.ld.in
 LINK_FILE     := $(KTREE_OBJ_ROOT)/arch/$(ARCH)/ucore.ld
 SEDFLAGS	= s/TEXT_START/$(UCONFIG_TEXT_START)/
