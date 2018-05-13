@@ -126,6 +126,7 @@ static void mmc0_device_init(struct device *dev)
 	dev->d_close = mmc0_close;
 	dev->d_io = mmc0_io;
 	dev->d_ioctl = mmc0_ioctl;
+	dev->d_mmap = NULL_VOP_INVAL;
 	sem_init(&(mmc0_sem), 1);
 
 	static_assert(MMC0_BUFSIZE % MMC0_BLKSIZE == 0);

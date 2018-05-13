@@ -21,7 +21,7 @@
  * Implementation of the disk1 device, "disk1:", which generates an
  * immediate EOF on read and throws away anything written to it.
  */
-/* Nand flash Disk Driver 
+/* Nand flash Disk Driver
  * Only create a dev-inode here
  * initialization should have been done by hardware-dependent code
  */
@@ -67,6 +67,7 @@ static void disk1_device_init(struct device *dev)
 	dev->d_close = disk1_close;
 	dev->d_io = disk1_io;
 	dev->d_ioctl = disk1_ioctl;
+	dev->d_mmap = NULL_VOP_INVAL;
 }
 
 /*

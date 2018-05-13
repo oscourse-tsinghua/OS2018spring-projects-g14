@@ -50,6 +50,7 @@ static void null_device_init(struct device *dev)
 	dev->d_close = null_close;
 	dev->d_io = null_io;
 	dev->d_ioctl = null_ioctl;
+	dev->d_mmap = NULL_VOP_INVAL;
 }
 
 /*

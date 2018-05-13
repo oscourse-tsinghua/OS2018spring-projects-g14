@@ -114,6 +114,7 @@ static void stdin_device_init(struct device *dev)
 	dev->d_close = stdin_close;
 	dev->d_io = stdin_io;
 	dev->d_ioctl = stdin_ioctl;
+	dev->d_mmap = NULL_VOP_INVAL;
 
 	p_rpos = p_wpos = 0;
 	wait_queue_init(wait_queue);

@@ -47,6 +47,7 @@ static void stdout_device_init(struct device *dev)
 	dev->d_close = stdout_close;
 	dev->d_io = stdout_io;
 	dev->d_ioctl = stdout_ioctl;
+	dev->d_mmap = NULL_VOP_INVAL;
 }
 
 void dev_init_stdout(void)

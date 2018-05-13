@@ -559,10 +559,11 @@ void *sysfile_linux_mmap2(void *addr, size_t len, int prot, int flags,
 	if (__is_linux_devfile(fd)) {
 		return linux_devfile_mmap2(addr, len, prot, flags, fd, pgoff);
 	}
-#ifdef UCONFIG_BIONIC_LIBC
 	else {
+#ifdef UCONFIG_BIONIC_LIBC
 		return linux_regfile_mmap2(addr, len, prot, flags, fd, pgoff);
-	}
 #endif //UCONFIG_BIONIC_LIBC
+		return file_mmap2(fd, addr, len, pgoff);
+	}
 	return MAP_FAILED;
 }

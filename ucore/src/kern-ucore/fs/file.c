@@ -463,6 +463,21 @@ int file_ioctl(int fd, int op, void *data)
 	return ret;
 }
 
+void *file_mmap2(int fd, void *addr, size_t len, size_t pgoff)
+{
+	int ret = -E_INVAL;
+	struct file *file;
+	if ((ret = fd2file(fd, &file)) != 0) {
+		return NULL;
+	}
+	filemap_acquire(file);
+	struct device *dev = vop_info(file->node, device);
+	assert(dev);
+	void *r = dev->d_mmap(dev, addr, len, pgoff);
+	filemap_release(file);
+	return r;
+}
+
 /* linux devfile adaptor */
 bool __is_linux_devfile(int fd)
 {

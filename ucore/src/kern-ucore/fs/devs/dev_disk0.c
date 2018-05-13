@@ -127,6 +127,7 @@ static void disk0_device_init(struct device *dev)
 	dev->d_close = disk0_close;
 	dev->d_io = disk0_io;
 	dev->d_ioctl = disk0_ioctl;
+	dev->d_mmap = NULL_VOP_INVAL;
 	sem_init(&(disk0_sem), 1);
 
 	static_assert(DISK0_BUFSIZE % DISK0_BLKSIZE == 0);

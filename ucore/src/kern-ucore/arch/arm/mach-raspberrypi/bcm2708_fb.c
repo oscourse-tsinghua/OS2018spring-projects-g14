@@ -1,5 +1,8 @@
 #include <arm.h>
 #include <dev.h>
+#include <mmu.h>
+#include <pmm.h>
+#include <vmm.h>
 #include <vfs.h>
 #include <proc.h>
 #include <inode.h>
@@ -113,7 +116,7 @@ static int bcm2708_fb_probe(struct device *dev)
 
 	kprintf("BCM2708FB Initialized.\n"
 		"base=0x%08x, resolution=%dx%d, bpp=%d, pitch=%d, size=%d\n",
-		fbinfo.screen_size, fbinfo.xres, fbinfo.yres, fbinfo.bpp,
+		fb->screen_base, fbinfo.xres, fbinfo.yres, fbinfo.bpp,
 		fbinfo.pitch, fbinfo.screen_size);
 
 	goto out;
@@ -212,6 +215,7 @@ static int do_fb_ioctl(struct fb_info *info, int op, void *data)
 	struct fb_fix_screeninfo fix;
 	struct mm_struct *mm = current->mm;
 	int ret = 0;
+	assert(mm);
 
 	switch (op) {
 	case FBIOGET_VSCREENINFO:
@@ -226,6 +230,62 @@ static int do_fb_ioctl(struct fb_info *info, int op, void *data)
 		ret = -E_INVAL;
 	}
 	return ret;
+}
+
+static int do_fb_mmap(struct fb_info *info, struct vma_struct *vma,
+		      size_t pgoff)
+{
+	unsigned long off;
+	unsigned long start;
+	uint32_t len;
+
+	if (pgoff > (~0UL >> PGSHIFT))
+		return -E_INVAL;
+	off = pgoff << PGSHIFT;
+
+	/* frame buffer memory */
+	start = info->fix.smem_start;
+	len = ROUNDUP((start & (PGSIZE - 1)) + info->fix.smem_len, PGSIZE);
+	if (off >= len) {
+		return -E_INVAL;
+	}
+
+	start &= ~(PGSIZE - 1);
+	if ((vma->vm_end - vma->vm_start + off) > len)
+		return -E_INVAL;
+	off += start;
+
+	unsigned long ret = 0;
+	unsigned long vaddr = vma->vm_start;
+	unsigned long size = vma->vm_end - vma->vm_start;
+	struct mm_struct *mm = current->mm;
+	uint32_t vm_flags = VM_READ | VM_WRITE | VM_IO;
+	pte_perm_t perm = PTE_P | PTE_U | PTE_W;
+	assert(mm);
+	lock_mm(mm);
+	if (vaddr == 0) {
+		if ((vaddr = get_unmapped_area(mm, size)) == 0) {
+			goto out_unlock;
+		}
+	}
+	if (mm_map(mm, vaddr, size, vm_flags, NULL) == 0) {
+		ret = vaddr;
+	}
+	size = (size + PGSIZE - 1) / PGSIZE;
+	for (; size > 0; size--, off += PGSIZE, vaddr += PGSIZE) {
+		pte_t *ptep = get_pte(mm->pgdir, vaddr, 1);
+		ptep_map(ptep, off);
+		ptep_set_perm(ptep, perm);
+		mp_tlb_update(mm->pgdir, vaddr);
+	}
+out_unlock:
+	unlock_mm(mm);
+
+	if (!ret) {
+		return -E_NOMEM;
+	}
+	vma->vm_start = ret;
+	return 0;
 }
 
 static int fb_open(struct device *dev, uint32_t open_flags)
@@ -252,6 +312,37 @@ static int fb_ioctl(struct device *dev, int op, void *data)
 	return do_fb_ioctl(info, op, data);
 }
 
+static void *fb_mmap(struct device *dev, void *addr, size_t len, size_t pgoff)
+{
+	struct fb_info *info = (struct fb_info *)dev->driver_data;
+
+	int ret = -E_INVAL;
+	if (!info) {
+		ret = -E_NODEV;
+		goto out;
+	}
+
+	struct vma_struct *vma = NULL;
+	vma = (struct vma_struct *)kmalloc(sizeof(struct vma_struct));
+	if (!vma) {
+		ret = -E_NOMEM;
+		goto out;
+	}
+
+	len = ROUNDUP(len, PGSIZE);
+	vma->vm_start = (uintptr_t)addr;
+	vma->vm_end = vma->vm_start + len;
+
+	ret = do_fb_mmap(info, vma, pgoff);
+	void *r = (void *)vma->vm_start;
+	kfree(vma);
+
+out:
+	if (ret)
+		return NULL;
+	return r;
+}
+
 static int fb_device_init(struct device *dev)
 {
 	memset(dev, 0, sizeof(*dev));
@@ -266,6 +357,7 @@ static int fb_device_init(struct device *dev)
 	dev->d_close = fb_close;
 	dev->d_io = fb_io;
 	dev->d_ioctl = fb_ioctl;
+	dev->d_mmap = fb_mmap;
 
 	return ret;
 }

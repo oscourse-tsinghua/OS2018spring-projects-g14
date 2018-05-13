@@ -19,9 +19,9 @@
 
 #define false	(0)
 
-/* 
+/*
    vmm design include two parts: mm_struct (mm) & vma_struct (vma)
-   mm is the memory manager for the set of continuous virtual memory  
+   mm is the memory manager for the set of continuous virtual memory
    area which have the same PDT. vma is a continuous virtual memory area.
    There a linear link list for vma & a redblack link list for vma in mm.
    ---------------
@@ -38,7 +38,7 @@
    struct vma_struct * find_vma(struct mm_struct *mm, uintptr_t addr)
    local functions
    inline void check_vma_overlap(struct vma_struct *prev, struct vma_struct *next)
-   inline struct vma_struct * find_vma_rb(rb_tree *tree, uintptr_t addr) 
+   inline struct vma_struct * find_vma_rb(rb_tree *tree, uintptr_t addr)
    inline void insert_vma_rb(rb_tree *tree, struct vma_struct *vma, ....
    inline int vma_compare(rb_node *node1, rb_node *node2)
    ---------------
@@ -164,7 +164,7 @@ static inline struct vma_struct *find_vma_rb(rb_tree * tree, uintptr_t addr)
 		}
 	}
 #if 0
-    if (vma!=NULL) 
+    if (vma!=NULL)
       kprintf("  find_vma_rb end:: addr %d, vma %x, start %d, end %d\n",addr, vma, vma->vm_start, vma->vm_end);
     else
       kprintf("  find_vma_rb end:: vma is NULL\n");
@@ -481,7 +481,9 @@ int mm_unmap(struct mm_struct *mm, uintptr_t addr, size_t len)
 #endif //UCONFIG_BIONIC_LIBC
 		vma_resize(vma, end, vma->vm_end);
 		insert_vma_struct(mm, nvma);
-		unmap_range(mm->pgdir, start, end);
+		// FIXME
+		if (vma->vm_flags & VM_IO == 0)
+			unmap_range(mm->pgdir, start, end);
 		return 0;
 	}
 
@@ -519,7 +521,9 @@ int mm_unmap(struct mm_struct *mm, uintptr_t addr, size_t len)
 				vma_destroy(vma);
 			}
 		}
-		unmap_range(mm->pgdir, un_start, un_end);
+		// FIXME
+		if (vma->vm_flags & VM_IO == 0)
+			unmap_range(mm->pgdir, un_start, un_end);
 	}
 	return 0;
 }
@@ -630,7 +634,9 @@ void exit_mmap(struct mm_struct *mm)
 	list_entry_t *list = &(mm->mmap_list), *le = list;
 	while ((le = list_next(le)) != list) {
 		struct vma_struct *vma = le2vma(le, list_link);
-		unmap_range(pgdir, vma->vm_start, vma->vm_end);
+		// FIXME
+		if (vma->vm_flags & VM_IO == 0)
+			unmap_range(pgdir, vma->vm_start, vma->vm_end);
 
 #ifdef UCONFIG_BIONIC_LIBC
 		vma_unmapfile(vma);
@@ -894,8 +900,8 @@ int do_pgfault(struct mm_struct *mm, machine_word_t error_code, uintptr_t addr)
 {
 	if (mm == NULL) {
 		assert(current != NULL);
-		/* Chen Yuheng 
-		 * give handler a chance to deal with it 
+		/* Chen Yuheng
+		 * give handler a chance to deal with it
 		 */
 		kprintf
 		    ("page fault in kernel thread: pid = %d, name = %s, %d %08x.\n",
@@ -1063,7 +1069,7 @@ int do_pgfault(struct mm_struct *mm, machine_word_t error_code, uintptr_t addr)
 #endif
 			}
 		}
-	} else {		//a present page, handle copy-on-write (cow) 
+	} else {		//a present page, handle copy-on-write (cow)
 		struct Page *page, *newpage = NULL;
 		bool cow =
 		    ((vma->vm_flags & (VM_SHARE | VM_WRITE)) == VM_WRITE),
