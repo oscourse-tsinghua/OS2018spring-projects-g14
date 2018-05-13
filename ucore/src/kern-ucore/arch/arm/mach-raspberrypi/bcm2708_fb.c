@@ -224,7 +224,7 @@ static int do_fb_ioctl(struct fb_info *info, int op, void *data)
 		break;
 	case FBIOGET_FSCREENINFO:
 		fix = info->fix;
-		ret = !copy_to_user(mm, data, &fix, sizeof(fix)) ? 0 : -E_FAULT;
+		ret = copy_to_user(mm, data, &fix, sizeof(fix)) ? 0 : -E_FAULT;
 		break;
 	default:
 		ret = -E_INVAL;
