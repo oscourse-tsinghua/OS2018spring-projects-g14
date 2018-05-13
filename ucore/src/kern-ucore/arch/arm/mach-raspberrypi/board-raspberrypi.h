@@ -18,7 +18,9 @@
 
 #ifndef __ASSEMBLY__
 
+extern void board_init_early(void);
 extern void board_init(void);
+extern void device_init(void);
 
 #endif
 

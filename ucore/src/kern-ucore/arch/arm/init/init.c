@@ -41,7 +41,7 @@
 
 // Very important:
 // At the boot, exceptions handlers have not been defined
-// Copy the address of exceptions handlers (defined in vectors.S) to 0x24 
+// Copy the address of exceptions handlers (defined in vectors.S) to 0x24
 // (or Ox20 if we decide to change reset handler)
 // XXX it works only when 0x0 is a sram/sdram
 extern char __vector_table, __vector_table_end;
@@ -63,7 +63,7 @@ static void test_yaffs()
 	yaffs_mkdir("/data/td", S_IREAD | S_IWRITE);
 	yaffs_mkdir("/data/td/d1", S_IWRITE | S_IREAD);
 	//int fd = yaffs_unlink("/data/test.txt");
-	//kprintf("@@@@@@@ fd %d %s\n", fd, yaffs_error_to_str(yaffs_get_error())); 
+	//kprintf("@@@@@@@ fd %d %s\n", fd, yaffs_error_to_str(yaffs_get_error()));
 	int fd = yaffs_open("/data/test.txt", O_RDONLY, 0);
 	//int fd = yaffs_open("/data/td/test.txt",O_RDWR|O_CREAT, S_IREAD|S_IWRITE);
 	kprintf("@@@@ fd %d %s\n", fd, yaffs_error_to_str(yaffs_get_error()));
@@ -193,6 +193,8 @@ int kern_init(void)
 	//ucore_vfs_add_device("input0", 13, 0);
 	ucore_vfs_add_device("event0", 13, 64);
 	ucore_vfs_add_device("hzfchar", 222, 0);
+#else
+	device_init();
 #endif
 
 	enable_timer_list();

@@ -93,7 +93,7 @@ static void serial_putc_sub(int c)
 		outb(AUX_MU_IO_REG, c);
 		dmb();
 	}
-	fb_write(c);
+	fb_putc(c);
 	dmb();
 }
 

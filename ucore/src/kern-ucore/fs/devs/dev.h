@@ -24,13 +24,14 @@ struct device {
 	size_t d_blocks;
 	size_t d_blocksize;
 	/* for Linux */
-	/* 
+	/*
 	   unsigned long i_rdev;
 	   mode_t i_mode;
-	   const struct file_operations *i_fops; 
+	   const struct file_operations *i_fops;
 	 */
 	void *linux_file;
 	void *linux_dentry;
+	void *driver_data;
 
 	int (*d_linux_read) (struct device * dev, const char __user * buf,
 			     size_t count, size_t * offset);

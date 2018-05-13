@@ -3,7 +3,7 @@
 #include <serial.h>
 #include <clock.h>
 
-#include "framebuffer.h"
+#include "bcm2708_fb.h"
 #include "vc4/vc4_gl.h"
 
 static const char *message = "Initializing Raspberry Pi Board...\n";
@@ -29,10 +29,6 @@ void board_init_early()
 void board_init()
 {
 	serial_init_mmu();
-
-	// FIXME temporary
-	fb_init();
-	vc4_hello_triangle();
 }
 
 /* no nand */
@@ -44,4 +40,10 @@ int check_nandflash()
 struct nand_chip *get_nand_chip()
 {
 	return NULL;
+}
+
+void device_init(void)
+{
+	dev_init_fb();
+	vc4_hello_triangle();
 }

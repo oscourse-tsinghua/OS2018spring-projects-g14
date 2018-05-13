@@ -3,7 +3,7 @@
  *
  *       Filename:  board.h
  *
- *    Description:  
+ *    Description:
  *
  *        Version:  1.0
  *        Created:  03/17/2012 02:19:11 PM
@@ -32,7 +32,7 @@
 #define __io_address(x) (x)
 #endif
 
-//IRQ 
+//IRQ
 #define TIMER0_IRQ 3
 
 #define UART_RXIM (1<<4)
@@ -57,7 +57,9 @@
 #define UART0_TX 		((volatile unsigned char*) GOLDFISH_UART0 + 0x00)
 //#define INITIAL_LOAD    ((volatile uintptr_t *) (0x1000))
 
+extern void board_init_early(void);
 extern void board_init(void);
+extern void device_init(void);
 
 #endif
 

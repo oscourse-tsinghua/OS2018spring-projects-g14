@@ -3,7 +3,7 @@
  *
  *       Filename:  board.h
  *
- *    Description:  
+ *    Description:
  *
  *        Version:  1.0
  *        Created:  03/17/2012 02:19:11 PM
@@ -32,7 +32,7 @@
 #define __io_address(x) (x)
 #endif
 
-//IRQ 
+//IRQ
 #define PER_IRQ_BASE     32
 #define PANDABOARD_UART3_IRQ  74
 #define PRIVATE_TIMER0_IRQ 29
@@ -59,6 +59,7 @@
 
 extern void board_init_early(void);
 extern void board_init(void);
+extern void device_init(void);
 
 #endif
 

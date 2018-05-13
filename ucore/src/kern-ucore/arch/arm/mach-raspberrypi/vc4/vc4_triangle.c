@@ -2,7 +2,7 @@
 #include <assert.h>
 #include <types.h>
 
-#include "framebuffer.h"
+#include "bcm2708_fb.h"
 #include "vc4_drv.h"
 #include "vc4_regs.h"
 #include "vc4_packet.h"
@@ -91,9 +91,9 @@ static void testTriangle()
 	uint8_t *list = cl->vaddr;
 	uint8_t *p = list;
 
-	struct fb_info *fb = raspberrypi_fb;
-	uint32_t renderWth = fb->width;
-	uint32_t renderHt = fb->height;
+	struct fb_info *fb = get_fb_info();
+	uint32_t renderWth = fb->var.xres;
+	uint32_t renderHt = fb->var.yres;
 	uint32_t binWth = (renderWth + 63) / 64; // Tiles across
 	uint32_t binHt = (renderHt + 63) / 64; // Tiles down
 
@@ -243,10 +243,10 @@ static void testTriangle()
 
 	// Tile Rendering Mode Configuration
 	addbyte(&p, 113);
-	addword(&p, fb->bus_addr); // framebuffer addresss
+	addword(&p, fb->fb_bus_address); // framebuffer addresss
 	addshort(&p, renderWth); // width
 	addshort(&p, renderHt); // height
-	addbyte(&p, VC4_SET_FIELD(fb->bits_per_pixel == 16 ?
+	addbyte(&p, VC4_SET_FIELD(fb->var.bits_per_pixel == 16 ?
 					  VC4_RENDER_CONFIG_FORMAT_BGR565 :
 					  VC4_RENDER_CONFIG_FORMAT_RGBA8888,
 				  VC4_RENDER_CONFIG_FORMAT));
@@ -342,10 +342,10 @@ static void testTriangle()
 
 	for (y = -6; y < 6; y++) {
 		for (x = -6; x < 6; x++) {
-			uint32_t bytes_per_pixel = fb->bits_per_pixel >> 3;
-			uint32_t addr = (y + (int)y4) * fb->pitch +
+			uint32_t bytes_per_pixel = fb->var.bits_per_pixel >> 3;
+			uint32_t addr = (y + (int)y4) * fb->fix.line_length +
 					(x + (int)x4) * bytes_per_pixel;
-			uint8_t *ptr = (uint8_t *)fb->screen_base + addr;
+			char *ptr = fb->screen_base + addr;
 			int k;
 			for (k = bytes_per_pixel - 1; k >= 0; k--)
 				kprintf("%02x", *(ptr + k));
@@ -357,7 +357,7 @@ static void testTriangle()
 
 void vc4_hello_triangle()
 {
-	if (raspberrypi_fb_exist == 0) {
+	if (fb_check() == 0) {
 		kprintf("VC4: no framebuffer found.\n");
 		return;
 	}

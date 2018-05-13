@@ -3,7 +3,7 @@
  *
  *       Filename:  board.c
  *
- *    Description:  
+ *    Description:
  *
  *        Version:  1.0
  *        Created:  03/24/2012 01:21:05 PM
@@ -65,4 +65,9 @@ int check_nandflash()
 struct nand_chip *get_nand_chip()
 {
 	return NULL;
+}
+
+void device_init(void)
+{
+
 }

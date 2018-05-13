@@ -388,8 +388,7 @@ void pmm_init(void)
 	mmu_init();
 
 	/* ioremap */
-	// FIXME temporary
-	// board_init();
+	board_init();
 
 	kprintf("mmu enabled.\n");
 	print_pgdir(kprintf);
@@ -407,9 +406,6 @@ void pmm_init(void)
 	slab_init();
 
 	kprintf("slab_init() done\n");
-
-	// FIXME temporary
-	board_init();
 
 	/*
 	 * Add by whn09, map 0xffff0fa0!
