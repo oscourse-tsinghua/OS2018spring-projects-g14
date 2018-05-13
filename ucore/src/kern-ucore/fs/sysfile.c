@@ -543,10 +543,11 @@ int sysfile_ioctl(int fd, unsigned int cmd, unsigned long arg)
 	if (!file_testfd(fd, 1, 0)) {
 		return -E_INVAL;
 	}
-	if (!__is_linux_devfile(fd)) {
-		return -E_INVAL;
+	if (__is_linux_devfile(fd)) {
+		return linux_devfile_ioctl(fd, cmd, arg);
+	} else {
+		return file_ioctl(fd, cmd, (void *)arg);
 	}
-	return linux_devfile_ioctl(fd, cmd, arg);
 }
 
 void *sysfile_linux_mmap2(void *addr, size_t len, int prot, int flags,

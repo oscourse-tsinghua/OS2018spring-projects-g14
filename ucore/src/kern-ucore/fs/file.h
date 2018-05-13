@@ -48,6 +48,7 @@ int file_getdirentry(int fd, struct dirent *dirent);
 int file_dup(int fd1, int fd2);
 int file_pipe(int fd[]);
 int file_mkfifo(const char *name, uint32_t open_flags);
+int file_ioctl(int fd, int op, void *data);
 
 int linux_devfile_read(int fd, void *base, size_t len, size_t * copied_store);
 int linux_devfile_write(int fd, void *base, size_t len, size_t * copied_store);

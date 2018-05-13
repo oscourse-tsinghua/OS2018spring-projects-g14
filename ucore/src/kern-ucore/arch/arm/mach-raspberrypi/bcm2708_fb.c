@@ -1,6 +1,7 @@
 #include <arm.h>
 #include <dev.h>
 #include <vfs.h>
+#include <proc.h>
 #include <inode.h>
 #include <error.h>
 
@@ -205,6 +206,28 @@ void fb_putc(unsigned char ch) //char *text)
 	}
 }
 
+static int do_fb_ioctl(struct fb_info *info, int op, void *data)
+{
+	struct fb_var_screeninfo var;
+	struct fb_fix_screeninfo fix;
+	struct mm_struct *mm = current->mm;
+	int ret = 0;
+
+	switch (op) {
+	case FBIOGET_VSCREENINFO:
+		var = info->var;
+		ret = copy_to_user(mm, data, &var, sizeof(var)) ? 0 : -E_FAULT;
+		break;
+	case FBIOGET_FSCREENINFO:
+		fix = info->fix;
+		ret = !copy_to_user(mm, data, &fix, sizeof(fix)) ? 0 : -E_FAULT;
+		break;
+	default:
+		ret = -E_INVAL;
+	}
+	return ret;
+}
+
 static int fb_open(struct device *dev, uint32_t open_flags)
 {
 	return 0;
@@ -222,7 +245,11 @@ static int fb_io(struct device *dev, struct iobuf *iob, bool write)
 
 static int fb_ioctl(struct device *dev, int op, void *data)
 {
-	return -E_INVAL;
+	struct fb_info *info = (struct fb_info *)dev->driver_data;
+
+	if (!info)
+		return -E_NODEV;
+	return do_fb_ioctl(info, op, data);
 }
 
 static int fb_device_init(struct device *dev)

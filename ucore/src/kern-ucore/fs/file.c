@@ -448,6 +448,21 @@ failed_cleanup_file:
 	return ret;
 }
 
+int file_ioctl(int fd, int op, void *data)
+{
+	int ret = -E_INVAL;
+	struct file *file;
+	if ((ret = fd2file(fd, &file)) != 0) {
+		return 0;
+	}
+	filemap_acquire(file);
+	struct device *dev = vop_info(file->node, device);
+	assert(dev);
+	ret = dev->d_ioctl(dev, op, data);
+	filemap_release(file);
+	return ret;
+}
+
 /* linux devfile adaptor */
 bool __is_linux_devfile(int fd)
 {
