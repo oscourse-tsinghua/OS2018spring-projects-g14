@@ -124,7 +124,7 @@ static int bcm2708_fb_probe(struct device *dev)
 free_fb:
 	kfree(fb);
 free_region:
-	kprintf("BCM2708FB initialization failed.\n");
+	kprintf("BCM2708FB failed to initialize.\n");
 out:
 	return ret;
 }

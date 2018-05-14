@@ -8,29 +8,36 @@
 
 static int vc4_probe(struct device *dev)
 {
+	int ret = 0;
 	if (fb_check() == 0) {
+		ret = -E_NODEV;
 		kprintf("VC4: no framebuffer found.\n");
-		return -E_NODEV;
+		goto fail;
 	}
 
 	// The blob now has this nice handy call which powers up the v3d pipeline.
-	int ret = mbox_qpu_enable(1);
-	if (ret != 0) {
+	if ((ret = mbox_qpu_enable(1)) != 0) {
 		kprintf("VC4: cannot enable qpu.\n");
-		return -E_NODEV;
+		goto fail;
 	}
 
 	if (V3D_READ(V3D_IDENT0) != V3D_EXPECTED_IDENT0) {
+		ret = -E_INVAL;
 		kprintf("VC4: V3D_IDENT0 read 0x%08x instead of 0x%08x\n",
 			V3D_READ(V3D_IDENT0), V3D_EXPECTED_IDENT0);
-		return -E_INVAL;
+		goto fail;
 	}
 
 	dev->driver_data = get_fb_info();
 
 	kprintf("VideoCore IV GPU initialized.\n");
 
-	return 0;
+	goto out;
+
+fail:
+	kprintf("VideoCore IV GPU failed to initialize.\n");
+out:
+	return ret;
 }
 
 static int vc4_open(struct device *dev, uint32_t open_flags)
