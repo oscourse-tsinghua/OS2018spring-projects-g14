@@ -1186,6 +1186,7 @@ failed:
 	return ret;
 }
 
+#ifndef UCONFIG_HAVE_LINUX_DDE_BASE
 /**
  * remap_pfn_range - remap kernel memory to userspace, insert a new vma to mm
  * @addr: target user address to start at
@@ -1223,3 +1224,5 @@ out_unlock:
 	unlock_mm(mm);
 	return ret;
 }
+
+#endif // UCONFIG_HAVE_LINUX_DDE_BASE
