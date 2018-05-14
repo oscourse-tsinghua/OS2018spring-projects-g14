@@ -455,6 +455,30 @@ static void vma_resize(struct vma_struct *vma, uintptr_t start, uintptr_t end)
 	vma->vm_start = start, vma->vm_end = end;
 }
 
+static void unmap_vma_range(pgd_t *pgdir, struct vma_struct *vma,
+			     uintptr_t start, uintptr_t end)
+{
+	assert(start % PGSIZE == 0 && end % PGSIZE == 0);
+	if (vma->vm_flags & VM_IO) {
+		size_t off, size;
+		uintptr_t la = ROUNDDOWN(start, PGSIZE);
+		do {
+			off = start - la, size = PGSIZE - off;
+			if (size > end - start) {
+				size = end - start;
+			}
+			pte_t *ptep = get_pte(pgdir, la, 0);
+			if (ptep != NULL) {
+				ptep_unmap(ptep);
+				mp_tlb_invalidate(pgdir, la);
+			}
+			start += size, la += PGSIZE;
+		} while (start != 0 && start < end);
+	} else {
+		unmap_range(pgdir, start, end);
+	}
+}
+
 int mm_unmap(struct mm_struct *mm, uintptr_t addr, size_t len)
 {
 	uintptr_t start = ROUNDDOWN(addr, PGSIZE), end =
@@ -481,9 +505,7 @@ int mm_unmap(struct mm_struct *mm, uintptr_t addr, size_t len)
 #endif //UCONFIG_BIONIC_LIBC
 		vma_resize(vma, end, vma->vm_end);
 		insert_vma_struct(mm, nvma);
-		// FIXME
-		if (vma->vm_flags & VM_IO == 0)
-			unmap_range(mm->pgdir, start, end);
+		unmap_vma_range(mm->pgdir, vma, start, end);
 		return 0;
 	}
 
@@ -508,22 +530,22 @@ int mm_unmap(struct mm_struct *mm, uintptr_t addr, size_t len)
 			un_start = start, un_end = vma->vm_end;
 			vma_resize(vma, vma->vm_start, un_start);
 			insert_vma_struct(mm, vma);
+			unmap_vma_range(mm->pgdir, vma, un_start, un_end);
 		} else {
 			un_start = vma->vm_start, un_end = vma->vm_end;
 			if (end < un_end) {
 				un_end = end;
 				vma_resize(vma, un_end, vma->vm_end);
 				insert_vma_struct(mm, vma);
+				unmap_vma_range(mm->pgdir, vma, un_start, un_end);
 			} else {
+				unmap_vma_range(mm->pgdir, vma, un_start, un_end);
 #ifdef UCONFIG_BIONIC_LIBC
 				vma_unmapfile(vma);
 #endif //UCONFIG_BIONIC_LIBC
 				vma_destroy(vma);
 			}
 		}
-		// FIXME
-		if (vma->vm_flags & VM_IO == 0)
-			unmap_range(mm->pgdir, un_start, un_end);
 	}
 	return 0;
 }
@@ -634,9 +656,7 @@ void exit_mmap(struct mm_struct *mm)
 	list_entry_t *list = &(mm->mmap_list), *le = list;
 	while ((le = list_next(le)) != list) {
 		struct vma_struct *vma = le2vma(le, list_link);
-		// FIXME
-		if (vma->vm_flags & VM_IO == 0)
-			unmap_range(pgdir, vma->vm_start, vma->vm_end);
+		unmap_vma_range(pgdir, vma, vma->vm_start, vma->vm_end);
 
 #ifdef UCONFIG_BIONIC_LIBC
 		vma_unmapfile(vma);
@@ -1163,5 +1183,43 @@ failed:
 	if (need_unlock) {
 		unlock_mm(mm);
 	}
+	return ret;
+}
+
+/**
+ * remap_pfn_range - remap kernel memory to userspace, insert a new vma to mm
+ * @addr: target user address to start at
+ * @pfn: physical address of kernel memory (page number)
+ * @size: size of map area
+ */
+void *remap_pfn_range(unsigned long addr, unsigned long pfn, unsigned long size)
+{
+	void *ret = NULL;
+	struct mm_struct *mm = current->mm;
+	uint32_t vm_flags = VM_READ | VM_WRITE | VM_IO;
+	pte_perm_t perm = PTE_P | PTE_U | PTE_W;
+	assert(mm);
+	lock_mm(mm);
+	if (addr == 0) {
+		if ((addr = get_unmapped_area(mm, size)) == 0) {
+			goto out_unlock;
+		}
+	}
+	if (mm_map(mm, addr, size, vm_flags, NULL) == 0) {
+		ret = (void *)addr;
+	}
+	pfn = pfn << PGSHIFT;
+	size = (size + PGSIZE - 1) / PGSIZE;
+	for (; size > 0; size--, pfn += PGSIZE, addr += PGSIZE) {
+		pte_t *ptep = get_pte(mm->pgdir, addr, 1);
+		if (ptep == NULL) {
+			return NULL;
+		}
+		ptep_map(ptep, pfn);
+		ptep_set_perm(ptep, perm);
+		mp_tlb_update(mm->pgdir, addr);
+	}
+out_unlock:
+	unlock_mm(mm);
 	return ret;
 }

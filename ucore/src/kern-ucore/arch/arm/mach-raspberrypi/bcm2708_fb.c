@@ -255,36 +255,12 @@ static int do_fb_mmap(struct fb_info *info, struct vma_struct *vma,
 		return -E_INVAL;
 	off += start;
 
-	unsigned long ret = 0;
-	unsigned long vaddr = vma->vm_start;
-	unsigned long size = vma->vm_end - vma->vm_start;
-	struct mm_struct *mm = current->mm;
-	uint32_t vm_flags = VM_READ | VM_WRITE | VM_IO;
-	pte_perm_t perm = PTE_P | PTE_U | PTE_W;
-	assert(mm);
-	lock_mm(mm);
-	if (vaddr == 0) {
-		if ((vaddr = get_unmapped_area(mm, size)) == 0) {
-			goto out_unlock;
-		}
-	}
-	if (mm_map(mm, vaddr, size, vm_flags, NULL) == 0) {
-		ret = vaddr;
-	}
-	size = (size + PGSIZE - 1) / PGSIZE;
-	for (; size > 0; size--, off += PGSIZE, vaddr += PGSIZE) {
-		pte_t *ptep = get_pte(mm->pgdir, vaddr, 1);
-		ptep_map(ptep, off);
-		ptep_set_perm(ptep, perm);
-		mp_tlb_update(mm->pgdir, vaddr);
-	}
-out_unlock:
-	unlock_mm(mm);
-
-	if (!ret) {
+	void *r = (void *)remap_pfn_range(vma->vm_start, off >> PGSHIFT,
+					  vma->vm_end - vma->vm_start);
+	if (!r) {
 		return -E_NOMEM;
 	}
-	vma->vm_start = ret;
+	vma->vm_start = (unsigned long)r;
 	return 0;
 }
 
