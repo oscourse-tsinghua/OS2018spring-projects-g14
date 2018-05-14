@@ -7,9 +7,6 @@
 #include "vc4_regs.h"
 #include "vc4_packet.h"
 
-// I/O access
-volatile unsigned *v3d;
-
 static void addbyte(uint8_t **list, uint8_t d)
 {
 	*((*list)++) = d;
@@ -68,7 +65,7 @@ static void drawTriangle(uint8_t **p, float r, float g, float b, float x1,
 }
 
 // Render a single triangle to memory.
-static void testTriangle()
+static void testTriangle(struct fb_info *fb)
 {
 #define BUFFER_VERTEX_INDEX 0x50
 #define BUFFER_SHADER_OFFSET 0x80
@@ -91,7 +88,6 @@ static void testTriangle()
 	uint8_t *list = cl->vaddr;
 	uint8_t *p = list;
 
-	struct fb_info *fb = get_fb_info();
 	uint32_t renderWth = fb->var.xres;
 	uint32_t renderHt = fb->var.yres;
 	uint32_t binWth = (renderWth + 63) / 64; // Tiles across
@@ -290,51 +286,51 @@ static void testTriangle()
 	int render_length = p - (list + BUFFER_RENDER_CONTROL);
 
 	// clear caches
-	v3d[V3D_L2CACTL] = 4;
-	v3d[V3D_SLCACTL] = 0x0F0F0F0F;
+	V3D_WRITE(V3D_L2CACTL, 4);
+	V3D_WRITE(V3D_SLCACTL, 0x0F0F0F0F);
 
 	// stop the thread
-	v3d[V3D_CT0CS] = 0x20;
+	V3D_WRITE(V3D_CT0CS, 0x20);
 	// Wait for control list to execute
-	while (v3d[V3D_CT0CS] & 0x20)
+	while (V3D_READ(V3D_CT0CS) & 0x20)
 		;
 
 	// Run our control list
 	kprintf("Binner control list constructed.\n");
 	kprintf("Start Address: 0x%08x, length: 0x%x\n", bus_addr, length);
 
-	v3d[V3D_BFC] = 1; // reset binning frame count
-	v3d[V3D_CT0CA] = bus_addr;
-	v3d[V3D_CT0EA] = bus_addr + length;
-	kprintf("V3D_CT0CS: 0x%08x, Address: 0x%08x\n", v3d[V3D_CT0CS],
-		v3d[V3D_CT0CA]);
+	V3D_WRITE(V3D_BFC, 1); // reset binning frame count
+	V3D_WRITE(V3D_CT0CA, bus_addr);
+	V3D_WRITE(V3D_CT0EA, bus_addr + length);
+	kprintf("V3D_CT0CS: 0x%08x, Address: 0x%08x\n", V3D_READ(V3D_CT0CS),
+		V3D_READ(V3D_CT0CA));
 
 	// wait for binning to finish
-	while (v3d[V3D_BFC] == 0)
+	while (V3D_READ(V3D_BFC) == 0)
 		;
-	kprintf("V3D_CT0CS: 0x%08x, Address: 0x%08x\n", v3d[V3D_CT0CS],
-		v3d[V3D_CT0CA]);
+	kprintf("V3D_CT0CS: 0x%08x, Address: 0x%08x\n", V3D_READ(V3D_CT0CS),
+		V3D_READ(V3D_CT0CA));
 
 	// stop the thread
-	v3d[V3D_CT1CS] = 0x20;
+	V3D_WRITE(V3D_CT1CS, 0x20);
 	// Wait for control list to execute
-	while (v3d[V3D_CT1CS] & 0x20)
+	while (V3D_READ(V3D_CT1CS) & 0x20)
 		;
 
 	kprintf("Start Address: 0x%08x, length: 0x%x\n",
 		bus_addr + BUFFER_RENDER_CONTROL, render_length);
 
-	v3d[V3D_RFC] = 1; // reset rendering frame count
-	v3d[V3D_CT1CA] = bus_addr + BUFFER_RENDER_CONTROL;
-	v3d[V3D_CT1EA] = bus_addr + BUFFER_RENDER_CONTROL + render_length;
-	kprintf("V3D_CT1CS: 0x%08x, Address: 0x%08x\n", v3d[V3D_CT1CS],
-		v3d[V3D_CT1CA]);
+	V3D_WRITE(V3D_RFC, 1); // reset rendering frame count
+	V3D_WRITE(V3D_CT1CA, bus_addr + BUFFER_RENDER_CONTROL);
+	V3D_WRITE(V3D_CT1EA, bus_addr + BUFFER_RENDER_CONTROL + render_length);
+	kprintf("V3D_CT1CS: 0x%08x, Address: 0x%08x\n", V3D_READ(V3D_CT1CS),
+		V3D_READ(V3D_CT1CA));
 
 	// wait for render to finish
-	while (v3d[V3D_RFC] == 0)
+	while (V3D_READ(V3D_RFC) == 0)
 		;
-	kprintf("V3D_CT1CS: 0x%08x, Address: 0x%08x\n", v3d[V3D_CT1CS],
-		v3d[V3D_CT1CA]);
+	kprintf("V3D_CT1CS: 0x%08x, Address: 0x%08x\n", V3D_READ(V3D_CT1CS),
+		V3D_READ(V3D_CT1CA));
 
 	// Release resources
 	vc4_bo_destroy(vertex_data);
@@ -355,30 +351,7 @@ static void testTriangle()
 	}
 }
 
-void vc4_hello_triangle()
+void vc4_hello_triangle(struct fb_info *fb)
 {
-	if (fb_check() == 0) {
-		kprintf("VC4: no framebuffer found.\n");
-		return;
-	}
-
-	kprintf("Hello VC4 triangle!\n");
-
-	// The blob now has this nice handy call which powers up the v3d pipeline.
-	int ret = mbox_qpu_enable(1);
-	if (ret != 0) {
-		kprintf("VC4: cannot enable qpu.\n");
-		return;
-	}
-
-	// map v3d's registers into our address space.
-	v3d = (unsigned *)0x20c00000;
-
-	if (v3d[V3D_IDENT0] != 0x02443356) { // Magic number.
-		kprintf("VC4: V3D pipeline isn't powered up and accessable.\n");
-		return;
-	}
-
-	// We now have access to the v3d registers, we should do something.
-	testTriangle();
+	testTriangle(fb);
 }

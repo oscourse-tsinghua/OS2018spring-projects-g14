@@ -184,3 +184,8 @@ struct inode *dev_create_inode(void)
 	}
 	return node;
 }
+
+void dev_kill_inode(struct inode *node)
+{
+	vop_kill(node);
+}

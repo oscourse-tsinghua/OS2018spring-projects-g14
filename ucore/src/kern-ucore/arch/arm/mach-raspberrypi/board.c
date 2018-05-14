@@ -4,7 +4,7 @@
 #include <clock.h>
 
 #include "bcm2708_fb.h"
-#include "vc4/vc4_gl.h"
+#include "vc4/vc4_drv.h"
 
 static const char *message = "Initializing Raspberry Pi Board...\n";
 
@@ -45,5 +45,7 @@ struct nand_chip *get_nand_chip()
 void device_init(void)
 {
 	dev_init_fb();
-	vc4_hello_triangle();
+#ifdef UCONFIG_GPU_ENABLE
+	dev_init_vc4();
+#endif
 }

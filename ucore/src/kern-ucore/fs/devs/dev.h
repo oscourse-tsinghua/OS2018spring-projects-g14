@@ -59,5 +59,6 @@ struct device {
 void dev_init(void);
 /* Create inode for a vfs-level device. */
 struct inode *dev_create_inode(void);
+void dev_kill_inode(struct inode *node);
 
 #endif /* !__KERN_FS_DEVS_DEV_H__ */

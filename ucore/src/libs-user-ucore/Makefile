@@ -1,5 +1,7 @@
 .PHONY: all clean
 
+-include $(KCONFIG_AUTOCONFIG)
+
 ULIB_OBJ_ROOT := $(OBJPATH_ROOT)/libs-user-ucore
 ULIB_A := $(ULIB_OBJ_ROOT)/ulib.a
 
@@ -8,6 +10,7 @@ obj-y := dir.o file.o malloc.o panic.o signal.o spipe.o \
 				stdio.o string.o syscall.o thread.o ulib.o umain.o mod.o mount.o
 obj-y += common/hash.o common/rand.o common/printfmt.o \
 				common/string.o
+obj-$(UCONFIG_GPU_ENABLE) += GLES/gl.o
 
 include arch/$(ARCH)/include.mk
 
@@ -33,6 +36,9 @@ $(ULIB_OBJ_ROOT)/%.o: %.S | $(ULIB_OBJ_ROOT)
 $(ULIB_OBJ_ROOT):
 	@mkdir -p $(ULIB_OBJ_ROOT)/common
 	@mkdir -p $(ULIB_OBJ_ROOT)/arch/$(ARCH)
+ifeq ($(UCONFIG_GPU_ENABLE),y)
+	@mkdir -p $(ULIB_OBJ_ROOT)/GLES
+endif
 
 clean:
 	find . -name \*.o -exec rm -f {} \;

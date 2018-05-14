@@ -70,6 +70,11 @@ config FPU_ENABLE
   bool "Enable FPU"
   default n
 
+config GPU_ENABLE
+  depends ARM_BOARD_RASPBERRYPI
+  bool "Enable VideoCore IV GPU"
+  default y
+
 config KERNEL_BASE
   hex  "Kernel base address"
   default 0xc0000000
