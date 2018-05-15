@@ -3,9 +3,6 @@
 
 #include <types.h>
 
-typedef uint16_t __u16;
-typedef uint32_t __u32;
-
 #define FBIOGET_VSCREENINFO	0x4600
 #define FBIOGET_FSCREENINFO	0x4602
 

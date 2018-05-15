@@ -9,6 +9,9 @@ struct vc4_bo *vc4_bo_create(size_t size, size_t align)
 	if (!bo)
 		return NULL;
 
+	if (!align)
+		align = 1;
+
 	uint32_t handle =
 		mbox_mem_alloc(size, align, MEM_FLAG_COHERENT | MEM_FLAG_ZERO);
 	if (!handle) {
@@ -29,6 +32,9 @@ struct vc4_bo *vc4_bo_create(size_t size, size_t align)
 	bo->handle = handle;
 	bo->paddr = bus_addr;
 	bo->vaddr = (void *)bus_addr;
+
+	kprintf("vc4_bo_create: %08x %08x %08x %08x %08x\n", bo->size, align,
+		bo->handle, bo->paddr, bo->vaddr);
 
 	return bo;
 }

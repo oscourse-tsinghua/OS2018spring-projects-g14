@@ -63,6 +63,11 @@ typedef intptr_t off_t;
 /* ppn_t used for page numbers */
 typedef size_t ppn_t;
 
+typedef uint8_t __u8;
+typedef uint16_t __u16;
+typedef uint32_t __u32;
+typedef uint64_t __u64;
+
 /* *
  * Rounding operations (efficient when n is a power of 2)
  * Round down to the nearest multiple of n

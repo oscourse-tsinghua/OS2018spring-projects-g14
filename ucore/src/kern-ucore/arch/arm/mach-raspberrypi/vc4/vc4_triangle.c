@@ -2,356 +2,215 @@
 #include <assert.h>
 #include <types.h>
 
-#include "bcm2708_fb.h"
+#include "vc4_context.h"
+#include "vc4_cl.h"
 #include "vc4_drv.h"
-#include "vc4_regs.h"
 #include "vc4_packet.h"
 
-static void addbyte(uint8_t **list, uint8_t d)
+struct shaded_vertex {
+	uint16_t x, y;
+	float z, rhw;
+	float r, g, b;
+};
+
+static void vc4_rcl_tile_calls(struct vc4_context *vc4, uint32_t xtiles,
+			       uint32_t ytiles, struct vc4_bo *tile_alloc)
 {
-	*((*list)++) = d;
-}
+	int x, y;
+	for (x = 0; x < xtiles; x++) {
+		for (y = 0; y < ytiles; y++) {
+			cl_u8(&vc4->rcl, VC4_PACKET_TILE_COORDINATES);
+			cl_u8(&vc4->rcl, x);
+			cl_u8(&vc4->rcl, y);
 
-static void addshort(uint8_t **list, uint16_t d)
-{
-	*((*list)++) = (d)&0xff;
-	*((*list)++) = (d >> 8) & 0xff;
-}
+			cl_u8(&vc4->rcl, VC4_PACKET_BRANCH_TO_SUB_LIST);
+			cl_u32(&vc4->rcl,
+			       tile_alloc->paddr + (y * xtiles + x) * 32);
 
-static void addword(uint8_t **list, uint32_t d)
-{
-	*((*list)++) = (d)&0xff;
-	*((*list)++) = (d >> 8) & 0xff;
-	*((*list)++) = (d >> 16) & 0xff;
-	*((*list)++) = (d >> 24) & 0xff;
-}
-
-static void addfloat(uint8_t **list, float f)
-{
-	uint32_t d = *((uint32_t *)&f);
-	*((*list)++) = (d)&0xff;
-	*((*list)++) = (d >> 8) & 0xff;
-	*((*list)++) = (d >> 16) & 0xff;
-	*((*list)++) = (d >> 24) & 0xff;
-}
-
-static void drawTriangle(uint8_t **p, float r, float g, float b, float x1,
-			 float y1, float z1, float x2, float y2, float z2,
-			 float x3, float y3, int z3)
-{
-	addshort(p, ((int)x1) << 4); // X in 12.4 fixed point
-	addshort(p, ((int)y1) << 4); // Y in 12.4 fixed point
-	addfloat(p, z1); // Z
-	addfloat(p, 1.0f); // 1/W
-	addfloat(p, r); // Varying 0 (Red)
-	addfloat(p, g); // Varying 1 (Green)
-	addfloat(p, b); // Varying 2 (Blue)
-
-	addshort(p, ((int)x2) << 4); // X in 12.4 fixed point
-	addshort(p, ((int)y2) << 4); // Y in 12.4 fixed point
-	addfloat(p, z2); // Z
-	addfloat(p, 1.0f); // 1/W
-	addfloat(p, r); // Varying 0 (Red)
-	addfloat(p, g); // Varying 1 (Green)
-	addfloat(p, b); // Varying 2 (Blue)
-
-	addshort(p, ((int)x3) << 4); // X in 12.4 fixed point
-	addshort(p, ((int)y3) << 4); // Y in 12.4 fixed point
-	addfloat(p, z3); // Z
-	addfloat(p, 1.0f); // 1/W
-	addfloat(p, r); // Varying 0 (Red)
-	addfloat(p, g); // Varying 1 (Green)
-	addfloat(p, b); // Varying 2 (Blue)
-}
-
-// Render a single triangle to memory.
-static void testTriangle(struct fb_info *fb)
-{
-#define BUFFER_VERTEX_INDEX 0x50
-#define BUFFER_SHADER_OFFSET 0x80
-#define BUFFER_VERTEX_DATA 0x100
-#define BUFFER_TILE_STATE 0x300
-#define BUFFER_TILE_DATA 0x6300
-#define BUFFER_RENDER_CONTROL 0xe200
-#define BUFFER_FRAGMENT_SHADER 0xfe00
-#define BUFFER_FRAGMENT_UNIFORM 0xff00
-
-	// Like above, we allocate/lock/map some videocore memory
-	// I'm just shoving everything in a single buffer because I'm lazy
-	// 8Mb, 4k alignment
-	struct vc4_bo *cl = vc4_bo_create(0x800000, 0x1000);
-	if (cl == NULL) {
-		return;
+			if (x == xtiles - 1 && y == ytiles - 1) {
+				cl_u8(&vc4->rcl,
+				      VC4_PACKET_STORE_MS_TILE_BUFFER_AND_EOF);
+			} else {
+				cl_u8(&vc4->rcl,
+				      VC4_PACKET_STORE_MS_TILE_BUFFER);
+			}
+		}
 	}
+}
 
-	uint32_t bus_addr = cl->paddr;
-	uint8_t *list = cl->vaddr;
-	uint8_t *p = list;
+static void vc4_emit_state(struct vc4_context *vc4, uint32_t width,
+			   uint32_t height)
+{
+	cl_u8(&vc4->bcl, VC4_PACKET_CLIP_WINDOW);
+	cl_u16(&vc4->bcl, 0);
+	cl_u16(&vc4->bcl, 0);
+	cl_u16(&vc4->bcl, width); // width
+	cl_u16(&vc4->bcl, height); // height
 
-	uint32_t renderWth = fb->var.xres;
-	uint32_t renderHt = fb->var.yres;
-	uint32_t binWth = (renderWth + 63) / 64; // Tiles across
-	uint32_t binHt = (renderHt + 63) / 64; // Tiles down
+	cl_u8(&vc4->bcl, VC4_PACKET_CONFIGURATION_BITS);
+	cl_u8(&vc4->bcl, 0x03); // enable both foward and back facing polygons
+	cl_u8(&vc4->bcl, 0x00); // depth testing disabled
+	cl_u8(&vc4->bcl, 0x02); // enable early depth write
 
-	// Configuration stuff
-	// Tile Binning Configuration.
-	//   Tile state data is 48 bytes per tile, I think it can be thrown away
-	//   as soon as binning is finished.
-	addbyte(&p, 112);
-	addword(&p,
-		bus_addr + BUFFER_TILE_DATA); // tile allocation memory address
-	addword(&p, 0x8000); // tile allocation memory size
-	addword(&p, bus_addr + BUFFER_TILE_STATE); // Tile state data address
-	addbyte(&p, binWth); // 1920/64
-	addbyte(&p, binHt); // 1080/64 (16.875)
-	addbyte(&p, 0x04); // config
+	cl_u8(&vc4->bcl, VC4_PACKET_VIEWPORT_OFFSET);
+	cl_u16(&vc4->bcl, 0);
+	cl_u16(&vc4->bcl, 0);
+}
 
-	addbyte(&p, 6);
+static size_t emit_triangle(void *vaddr, float r, float g, float b, float x1,
+			    float y1, float z1, float x2, float y2, float z2,
+			    float x3, float y3, int z3)
+{
+	struct shaded_vertex verts[] = {
+		{ ((int)x1) << 4, ((int)y1) << 4, z1, 1, r, g, b },
+		{ ((int)x2) << 4, ((int)y2) << 4, z2, 1, r, g, b },
+		{ ((int)x3) << 4, ((int)y3) << 4, z3, 1, r, g, b },
+	};
 
-	// Primitive type
-	addbyte(&p, 56);
-	addbyte(&p, 0x12); // 16 bit triangle
+	memcpy(vaddr, verts, sizeof(verts));
 
-	// Clip Window
-	addbyte(&p, 102);
-	addshort(&p, 0);
-	addshort(&p, 0);
-	addshort(&p, renderWth); // width
-	addshort(&p, renderHt); // height
+	return sizeof(verts);
+}
 
-	// State
-	addbyte(&p, 96);
-	addbyte(&p, 0x03); // enable both foward and back facing polygons
-	addbyte(&p, 0x00); // depth testing disabled
-	addbyte(&p, 0x02); // enable early depth write
-
-	// Viewport offset
-	addbyte(&p, 103);
-	addshort(&p, 0);
-	addshort(&p, 0);
-
-	// The triangle
-	// No Vertex Shader state (takes pre-transformed vertexes,
-	// so we don't have to supply a working coordinate shader to test the binner.
-	addbyte(&p, 65);
-	addword(&p, bus_addr + BUFFER_SHADER_OFFSET); // Shader Record
-
-	// primitive index list
-	addbyte(&p, 32);
-	addbyte(&p, 0x04); // 8bit index, trinagles
-	addword(&p, 12); // Length
-	addword(&p, bus_addr + BUFFER_VERTEX_INDEX); // address
-	addword(&p, 16); // Maximum index
-
-	// End of bin list
-	// Flush
-	addbyte(&p, 5);
-	// Nop
-	addbyte(&p, 1);
-	// Halt
-	addbyte(&p, 0);
-
-	int length = p - list;
-
-	// Shader Record
-	p = list + BUFFER_SHADER_OFFSET;
-	addbyte(&p, 0x01); // flags
-	addbyte(&p, 6 * 4); // stride
-	addbyte(&p, 0xcc); // num uniforms (not used)
-	addbyte(&p, 3); // num varyings
-	addword(&p, bus_addr + BUFFER_FRAGMENT_SHADER); // Fragment shader code
-	addword(&p,
-		bus_addr + BUFFER_FRAGMENT_UNIFORM); // Fragment shader uniforms
-
-	struct vc4_bo *vertex_data = vc4_bo_create(12 * 24, 0x10);
-	if (vertex_data == NULL) {
-		return;
-	}
-	addword(&p, vertex_data->paddr); // Vertex Data
-
-	// Vertex Data
-	p = vertex_data->vaddr;
+static struct vc4_bo *get_vbo(struct vc4_context *vc4, uint32_t width,
+			      uint32_t height)
+{
+	struct vc4_bo *bo;
+	bo = vc4_bo_create(sizeof(struct shaded_vertex) * 12, 0x10);
 
 	float sqrt3 = 1.7320508075688772f;
 	float sqrt6 = 2.449489742783178;
 	int size = 600;
-	float x0 = (1920 / 2) - size / 2, y0 = 800, z0 = 1;
+	uint32_t center_x = width / 2, center_y = height / 2;
+	float x0 = center_x - size / 2, y0 = center_y + sqrt3 / 6 * size,
+	      z0 = 1;
 	float x1 = x0 + size / 2, y1 = y0 - sqrt3 / 2 * size, z1 = z0;
 	float x2 = x0, y2 = y0, z2 = z0;
 	float x3 = x0 + size, y3 = y0, z3 = z0;
 	float x4 = x0 + size / 2, y4 = y0 - sqrt3 / 6 * size,
 	      z4 = z0; // + sqrt6 / 3 * size;
 
-	drawTriangle(&p, 1, 1, 1, x1, y1 - 10, z1, x2 - 10, y2 + 10, z2,
-		     x3 + 10, y3 + 10, z3);
+	uint32_t offset = 0;
+	offset += emit_triangle(bo->vaddr + offset, 1, 1, 1, x1, y1 - 10, z1,
+				x2 - 10, y2 + 10, z2, x3 + 10, y3 + 10, z3);
+	offset += emit_triangle(bo->vaddr + offset, 1, 0, 0, x4, y4, z4, x2, y2,
+				z2, x1, y1, z1);
+	offset += emit_triangle(bo->vaddr + offset, 0, 0, 1, x4, y4, z4, x1, y1,
+				z1, x3, y3, z3);
+	offset += emit_triangle(bo->vaddr + offset, 0, 1, 0, x4, y4, z4, x2, y2,
+				z2, x3, y3, z3);
 
-	drawTriangle(&p, 1, 0, 0, x4, y4, z4, x2, y2, z2, x1, y1, z1);
+	return bo;
+}
 
-	drawTriangle(&p, 0, 0, 1, x4, y4, z4, x1, y1, z1, x3, y3, z3);
+static struct vc4_bo *get_ibo(struct vc4_context *vc4)
+{
+	static const uint8_t indices[] = {
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
+	};
+	struct vc4_bo *bo;
+	bo = vc4_bo_create(sizeof(indices), 1);
+	memcpy(bo->vaddr, indices, sizeof(indices));
 
-	drawTriangle(&p, 0, 1, 0, x4, y4, z4, x2, y2, z2, x3, y3, z3);
+	return bo;
+}
 
-	// Vertex list
-	p = list + BUFFER_VERTEX_INDEX;
-	addbyte(&p, 0);
-	addbyte(&p, 1);
-	addbyte(&p, 2);
-	addbyte(&p, 3);
-	addbyte(&p, 4);
-	addbyte(&p, 5);
-	addbyte(&p, 6);
-	addbyte(&p, 7);
-	addbyte(&p, 8);
-	addbyte(&p, 9);
-	addbyte(&p, 10);
-	addbyte(&p, 11);
+static void vc4_draw_vbo(struct vc4_context *vc4)
+{
+	uint32_t width = vc4->framebuffer->var.xres;
+	uint32_t height = vc4->framebuffer->var.yres;
+	uint32_t tilew = (width + 63) / 64; // Tiles across
+	uint32_t tileh = (height + 63) / 64; // Tiles down
 
-	// fragment shader
-	p = list + BUFFER_FRAGMENT_SHADER;
-	addword(&p, 0x958e0dbf);
-	addword(&p, 0xd1724823); /* mov r0, vary; mov r3.8d, 1.0 */
-	addword(&p, 0x818e7176);
-	addword(&p, 0x40024821); /* fadd r0, r0, r5; mov r1, vary */
-	addword(&p, 0x818e7376);
-	addword(&p, 0x10024862); /* fadd r1, r1, r5; mov r2, vary */
-	addword(&p, 0x819e7540);
-	addword(&p, 0x114248a3); /* fadd r2, r2, r5; mov r3.8a, r0 */
-	addword(&p, 0x809e7009);
-	addword(&p, 0x115049e3); /* nop; mov r3.8b, r1 */
-	addword(&p, 0x809e7012);
-	addword(&p, 0x116049e3); /* nop; mov r3.8c, r2 */
-	addword(&p, 0x159e76c0);
-	addword(&p, 0x30020ba7); /* mov tlbc, r3; nop; thrend */
-	addword(&p, 0x009e7000);
-	addword(&p, 0x100009e7); /* nop; nop; nop */
-	addword(&p, 0x009e7000);
-	addword(&p, 0x500009e7); /* nop; nop; sbdone */
+	size_t tile_alloc_size = 0x8000;
+	struct vc4_bo *tile_alloc = vc4_bo_create(tile_alloc_size, 0x1000);
+	struct vc4_bo *tile_state = vc4_bo_create(48 * tilew * tileh, 0x10);
+	struct vc4_bo *fs_uniform = vc4_bo_create(0x1000, 1);
 
-	// Render control list
-	p = list + BUFFER_RENDER_CONTROL;
+	struct vc4_bo *ibo = get_ibo(vc4);
+	struct vc4_bo *vbo = get_vbo(vc4, width, height);
 
-	// Clear color
-	addbyte(&p, 114);
-	addword(&p, 0x282c34); // Opaque Black
-	addword(&p, 0x282c34); // 32 bit clear colours need to be repeated twice
-	addword(&p, 0);
-	addbyte(&p, 0);
+	vc4->needs_flush = 1;
 
-	// Tile Rendering Mode Configuration
-	addbyte(&p, 113);
-	addword(&p, fb->fb_bus_address); // framebuffer addresss
-	addshort(&p, renderWth); // width
-	addshort(&p, renderHt); // height
-	addbyte(&p, VC4_SET_FIELD(fb->var.bits_per_pixel == 16 ?
-					  VC4_RENDER_CONFIG_FORMAT_BGR565 :
-					  VC4_RENDER_CONFIG_FORMAT_RGBA8888,
-				  VC4_RENDER_CONFIG_FORMAT));
-	addbyte(&p, 0x00);
+	//   Tile state data is 48 bytes per tile, I think it can be thrown away
+	//   as soon as binning is finished.
+	cl_u8(&vc4->bcl, VC4_PACKET_TILE_BINNING_MODE_CONFIG);
+	cl_u32(&vc4->bcl, tile_alloc->paddr);
+	cl_u32(&vc4->bcl, tile_alloc_size); /* tile allocation memory size */
+	cl_u32(&vc4->bcl, tile_state->paddr); // 16 byte aligned
+	cl_u8(&vc4->bcl, tilew);
+	cl_u8(&vc4->bcl, tileh);
+	cl_u8(&vc4->bcl, VC4_BIN_CONFIG_AUTO_INIT_TSDA);
+
+	cl_u8(&vc4->bcl, VC4_PACKET_START_TILE_BINNING);
+
+	cl_u8(&vc4->bcl, VC4_PACKET_PRIMITIVE_LIST_FORMAT);
+	cl_u8(&vc4->bcl, VC4_PRIMITIVE_LIST_FORMAT_32_XY |
+				 VC4_PRIMITIVE_LIST_FORMAT_TYPE_TRIANGLES);
+
+	vc4_emit_state(vc4, width, height);
+
+	cl_u8(&vc4->bcl, VC4_PACKET_NV_SHADER_STATE);
+	cl_u32(&vc4->bcl, vc4->shader_rec.paddr); // 16 byte aligned
+
+	cl_u8(&vc4->bcl, VC4_PACKET_GL_INDEXED_PRIMITIVE);
+	cl_u8(&vc4->bcl, 0x04); // 8bit index, trinagles
+	cl_u32(&vc4->bcl, 12); // Length
+	cl_u32(&vc4->bcl, ibo->paddr);
+	cl_u32(&vc4->bcl, 16); // Maximum index
+
+	cl_u8(&vc4->bcl, VC4_PACKET_FLUSH_ALL);
+	cl_u8(&vc4->bcl, VC4_PACKET_NOP);
+	cl_u8(&vc4->bcl, VC4_PACKET_HALT);
+
+	// Shader Record
+	cl_u8(&vc4->shader_rec, 0);
+	cl_u8(&vc4->shader_rec, sizeof(struct shaded_vertex)); // stride
+	cl_u8(&vc4->shader_rec, 0xcc); // num uniforms (not used)
+	cl_u8(&vc4->shader_rec, 3); // num varyings
+	cl_u32(&vc4->shader_rec, vc4->prog.fs->paddr);
+	cl_u32(&vc4->shader_rec, fs_uniform->paddr);
+	cl_u32(&vc4->shader_rec, vbo->paddr); // 128-bit aligned
+
+	vc4->shader_rec_count++;
+
+	// RCL
+	cl_u8(&vc4->rcl, VC4_PACKET_CLEAR_COLORS);
+	cl_u32(&vc4->rcl, 0x282c34);
+	cl_u32(&vc4->rcl, 0x282c34);
+	cl_u32(&vc4->rcl, 0);
+	cl_u8(&vc4->rcl, 0);
+
+	cl_u8(&vc4->rcl, VC4_PACKET_TILE_RENDERING_MODE_CONFIG);
+	cl_u32(&vc4->rcl, vc4->framebuffer->fb_bus_address);
+	cl_u16(&vc4->rcl, width);
+	cl_u16(&vc4->rcl, height);
+	cl_u8(&vc4->rcl,
+	      VC4_SET_FIELD(vc4->framebuffer->var.bits_per_pixel == 16 ?
+				    VC4_RENDER_CONFIG_FORMAT_BGR565 :
+				    VC4_RENDER_CONFIG_FORMAT_RGBA8888,
+			    VC4_RENDER_CONFIG_FORMAT) |
+		      VC4_SET_FIELD(VC4_TILING_FORMAT_LINEAR,
+				    VC4_RENDER_CONFIG_MEMORY_FORMAT));
+	cl_u8(&vc4->rcl, 0);
 
 	// Do a store of the first tile to force the tile buffer to be cleared
-	// Tile Coordinates
-	addbyte(&p, 115);
-	addbyte(&p, 0);
-	addbyte(&p, 0);
-	// Store Tile Buffer General
-	addbyte(&p, 28);
-	addshort(&p, 0); // Store nothing (just clear)
-	addword(&p, 0); // no address is needed
+	cl_u8(&vc4->rcl, VC4_PACKET_TILE_COORDINATES);
+	cl_u8(&vc4->rcl, 0);
+	cl_u8(&vc4->rcl, 0);
 
-	// Link all binned lists together
-	int x, y;
-	for (x = 0; x < binWth; x++) {
-		for (y = 0; y < binHt; y++) {
-			// Tile Coordinates
-			addbyte(&p, 115);
-			addbyte(&p, x);
-			addbyte(&p, y);
+	cl_u8(&vc4->rcl, VC4_PACKET_STORE_TILE_BUFFER_GENERAL);
+	cl_u16(&vc4->rcl, 0); // Store nothing (just clear)
+	cl_u32(&vc4->rcl, 0); // no address is needed
 
-			// Call Tile sublist
-			addbyte(&p, 17);
-			addword(&p, bus_addr + BUFFER_TILE_DATA +
-					    (y * binWth + x) * 32);
+	vc4_rcl_tile_calls(vc4, tilew, tileh, tile_alloc);
 
-			// Last tile needs a special store instruction
-			if (x == binWth - 1 && y == binHt - 1) {
-				// Store resolved tile color buffer and signal end of frame
-				addbyte(&p, 25);
-			} else {
-				// Store resolved tile color buffer
-				addbyte(&p, 24);
-			}
-		}
-	}
-
-	int render_length = p - (list + BUFFER_RENDER_CONTROL);
-
-	// clear caches
-	V3D_WRITE(V3D_L2CACTL, 4);
-	V3D_WRITE(V3D_SLCACTL, 0x0F0F0F0F);
-
-	// stop the thread
-	V3D_WRITE(V3D_CT0CS, 0x20);
-	// Wait for control list to execute
-	while (V3D_READ(V3D_CT0CS) & 0x20)
-		;
-
-	// Run our control list
-	kprintf("Binner control list constructed.\n");
-	kprintf("Start Address: 0x%08x, length: 0x%x\n", bus_addr, length);
-
-	V3D_WRITE(V3D_BFC, 1); // reset binning frame count
-	V3D_WRITE(V3D_CT0CA, bus_addr);
-	V3D_WRITE(V3D_CT0EA, bus_addr + length);
-	kprintf("V3D_CT0CS: 0x%08x, Address: 0x%08x\n", V3D_READ(V3D_CT0CS),
-		V3D_READ(V3D_CT0CA));
-
-	// wait for binning to finish
-	while (V3D_READ(V3D_BFC) == 0)
-		;
-	kprintf("V3D_CT0CS: 0x%08x, Address: 0x%08x\n", V3D_READ(V3D_CT0CS),
-		V3D_READ(V3D_CT0CA));
-
-	// stop the thread
-	V3D_WRITE(V3D_CT1CS, 0x20);
-	// Wait for control list to execute
-	while (V3D_READ(V3D_CT1CS) & 0x20)
-		;
-
-	kprintf("Start Address: 0x%08x, length: 0x%x\n",
-		bus_addr + BUFFER_RENDER_CONTROL, render_length);
-
-	V3D_WRITE(V3D_RFC, 1); // reset rendering frame count
-	V3D_WRITE(V3D_CT1CA, bus_addr + BUFFER_RENDER_CONTROL);
-	V3D_WRITE(V3D_CT1EA, bus_addr + BUFFER_RENDER_CONTROL + render_length);
-	kprintf("V3D_CT1CS: 0x%08x, Address: 0x%08x\n", V3D_READ(V3D_CT1CS),
-		V3D_READ(V3D_CT1CA));
-
-	// wait for render to finish
-	while (V3D_READ(V3D_RFC) == 0)
-		;
-	kprintf("V3D_CT1CS: 0x%08x, Address: 0x%08x\n", V3D_READ(V3D_CT1CS),
-		V3D_READ(V3D_CT1CA));
-
-	// Release resources
-	vc4_bo_destroy(vertex_data);
-	vc4_bo_destroy(cl);
-
-	for (y = -6; y < 6; y++) {
-		for (x = -6; x < 6; x++) {
-			uint32_t bytes_per_pixel = fb->var.bits_per_pixel >> 3;
-			uint32_t addr = (y + (int)y4) * fb->fix.line_length +
-					(x + (int)x4) * bytes_per_pixel;
-			char *ptr = fb->screen_base + addr;
-			int k;
-			for (k = bytes_per_pixel - 1; k >= 0; k--)
-				kprintf("%02x", *(ptr + k));
-			kprintf(" ");
-		}
-		kprintf("\n");
-	}
+	vc4_flush(vc4);
 }
 
 void vc4_hello_triangle(struct fb_info *fb)
 {
-	testTriangle(fb);
+	struct vc4_context *vc4 = vc4_context_create(fb);
+
+	vc4_draw_vbo(vc4);
 }

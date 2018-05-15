@@ -3,6 +3,7 @@
 #include <error.h>
 
 #include "vc4_drv.h"
+#include "vc4_drm.h"
 #include "bcm2708_fb.h"
 #include "mailbox_property.h"
 
@@ -56,7 +57,6 @@ static int vc4_ioctl(struct device *dev, int op, void *data)
 	if (!info)
 		return -E_NODEV;
 
-	kprintf("%08x %08x\n", op, data);
 	int ret = 0;
 	extern void vc4_hello_triangle(struct fb_info * fb);
 
