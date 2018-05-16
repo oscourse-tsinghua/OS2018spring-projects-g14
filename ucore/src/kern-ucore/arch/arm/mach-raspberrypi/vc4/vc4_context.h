@@ -12,9 +12,10 @@ struct vc4_program_stateobj {
 
 struct vc4_context {
 	struct vc4_cl bcl;
-	struct vc4_cl rcl;
 	struct vc4_cl shader_rec;
 	uint32_t shader_rec_count;
+
+	struct device *dev; // FIXME temporary
 
 	/**
 	 * Set if some drawing (triangles, blits, or just a glClear()) has
@@ -27,7 +28,7 @@ struct vc4_context {
 	struct fb_info *framebuffer;
 };
 
-struct vc4_context *vc4_context_create(struct fb_info *fb);
+struct vc4_context *vc4_context_create(struct device *dev);
 void vc4_program_init(struct vc4_context *vc4);
 void vc4_flush(struct vc4_context *vc4);
 

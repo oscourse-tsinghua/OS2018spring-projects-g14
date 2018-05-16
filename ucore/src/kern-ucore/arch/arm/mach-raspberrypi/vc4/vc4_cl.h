@@ -12,7 +12,7 @@ struct vc4_cl {
 
 void vc4_init_cl(struct vc4_cl *cl, uint32_t paddr, void *vaddr, size_t size);
 void vc4_reset_cl(struct vc4_cl *cl);
-void cl_dump(struct vc4_cl *cl, size_t cols, const char *name);
+void vc4_dump_cl(void *cl, size_t size, size_t cols, const char *name);
 
 struct __attribute__((__packed__)) unaligned_16 { uint16_t x; };
 struct __attribute__((__packed__)) unaligned_32 { uint32_t x; };
@@ -27,16 +27,28 @@ static inline void cl_advance(struct vc4_cl *cl, uint32_t n)
 	cl->next += n;
 }
 
-static inline void put_unaligned_32(struct vc4_cl *ptr, uint32_t val)
+static inline void put_unaligned_32(void *ptr, uint32_t val)
 {
-	struct unaligned_32 *p = (void *)ptr->next;
+	struct unaligned_32 *p = (void *)ptr;
 	p->x = val;
 }
 
-static inline void put_unaligned_16(struct vc4_cl *ptr, uint16_t val)
+static inline void put_unaligned_16(void *ptr, uint16_t val)
 {
-	struct unaligned_16 *p = (void *)ptr->next;
+	struct unaligned_16 *p = (void *)ptr;
 	p->x = val;
+}
+
+static inline uint32_t get_unaligned_32(void *ptr)
+{
+	struct unaligned_32 *p = (void *)ptr;
+	return p->x;
+}
+
+static inline uint16_t get_unaligned_16(void *ptr)
+{
+	struct unaligned_16 *p = (void *)ptr;
+	return p->x;
 }
 
 static inline void cl_u8(struct vc4_cl *cl, uint8_t n)
@@ -47,13 +59,13 @@ static inline void cl_u8(struct vc4_cl *cl, uint8_t n)
 
 static inline void cl_u16(struct vc4_cl *cl, uint16_t n)
 {
-	put_unaligned_16(cl, n);
+	put_unaligned_16(cl->next, n);
 	cl_advance(cl, 2);
 }
 
 static inline void cl_u32(struct vc4_cl *cl, uint32_t n)
 {
-	put_unaligned_32(cl, n);
+	put_unaligned_32(cl->next, n);
 	cl_advance(cl, 4);
 }
 

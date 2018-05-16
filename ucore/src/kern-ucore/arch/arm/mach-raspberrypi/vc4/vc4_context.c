@@ -1,5 +1,8 @@
+#include <assert.h>
+
 #include "vc4_drv.h"
 #include "vc4_drm.h"
+#include "vc4_packet.h"
 #include "vc4_context.h"
 
 static void dump_fbo(struct vc4_context *vc4)
@@ -32,25 +35,57 @@ void vc4_flush(struct vc4_context *vc4)
 	struct drm_vc4_submit_cl submit;
 	memset(&submit, 0, sizeof(submit));
 
+	if (cl_offset(&vc4->bcl) > 0) {
+		cl_u8(&vc4->bcl, VC4_PACKET_INCREMENT_SEMAPHORE);
+		cl_u8(&vc4->bcl, VC4_PACKET_FLUSH);
+	}
+
+	submit.color_write.bits =
+		VC4_SET_FIELD(vc4->framebuffer->var.bits_per_pixel == 16 ?
+				      VC4_RENDER_CONFIG_FORMAT_BGR565 :
+				      VC4_RENDER_CONFIG_FORMAT_RGBA8888,
+			      VC4_RENDER_CONFIG_FORMAT) |
+		VC4_SET_FIELD(VC4_TILING_FORMAT_LINEAR,
+			      VC4_RENDER_CONFIG_MEMORY_FORMAT);
+
 	submit.bin_cl = vc4->bcl.paddr;
 	submit.bin_cl_size = cl_offset(&vc4->bcl);
-	submit.render_cl = vc4->rcl.paddr;
-	submit.render_cl_size = cl_offset(&vc4->rcl);
 	submit.shader_rec = vc4->shader_rec.paddr;
 	submit.shader_rec_size = cl_offset(&vc4->shader_rec);
 	submit.shader_rec_count = vc4->shader_rec_count;
 
-	// cl_dump(&vc4->bcl, 8, "bcl");
-	// cl_dump(&vc4->shader_rec, 8, "shader_rec");
-	// cl_dump(&vc4->rcl, 18, "rcl");
+	const uint32_t tile_width = 64, tile_height = 64;
+	uint32_t draw_width = vc4->framebuffer->var.xres;
+	uint32_t draw_height = vc4->framebuffer->var.yres;
+	uint32_t draw_min_x = 0, draw_max_x = draw_width;
+	uint32_t draw_min_y = 0, draw_max_y = draw_height;
+	submit.min_x_tile = draw_min_x / tile_width;
+	submit.min_y_tile = draw_min_y / tile_height;
+	submit.max_x_tile = (draw_max_x - 1) / tile_width;
+	submit.max_y_tile = (draw_max_y - 1) / tile_height;
+	submit.width = draw_width;
+	submit.height = draw_height;
 
-	int ret = vc4_submit_cl_ioctl(&submit);
+	uint32_t cleared = 1;
+	uint32_t clear_color = 0x282c34;
+	if (cleared) {
+		submit.flags |= VC4_SUBMIT_CL_USE_CLEAR_COLOR;
+		submit.clear_color[0] = clear_color;
+		submit.clear_color[1] = clear_color;
+		submit.clear_z = 0;
+		submit.clear_s = 0;
+	}
+
+	// vc4_dump_cl(vc4->bcl.vaddr, cl_offset(&vc4->bcl), 8, "bcl");
+	// vc4_dump_cl(vc4->shader_rec.vaddr, cl_offset(&vc4->shader_rec), 8,
+	// 	    "shader_rec");
+
+	int ret = vc4_submit_cl_ioctl(vc4->dev, &submit);
 	if (ret) {
 		kprintf("vc4: submit failed: %e.\n", ret);
 	}
 
 	vc4_reset_cl(&vc4->bcl);
-	vc4_reset_cl(&vc4->rcl);
 	vc4_reset_cl(&vc4->shader_rec);
 	vc4->shader_rec_count = 0;
 
@@ -59,7 +94,7 @@ void vc4_flush(struct vc4_context *vc4)
 	dump_fbo(vc4);
 }
 
-struct vc4_context *vc4_context_create(struct fb_info *fb)
+struct vc4_context *vc4_context_create(struct device *dev)
 {
 #define BUFFER_SHADER_OFFSET 0x80
 #define BUFFER_RENDER_CONTROL 0x1000
@@ -71,15 +106,14 @@ struct vc4_context *vc4_context_create(struct fb_info *fb)
 		return NULL;
 
 	memset(vc4, 0, sizeof(struct vc4_context));
-	vc4->framebuffer = fb;
+	vc4->dev = dev;
+	vc4->framebuffer = to_vc4_dev(dev)->fb;
 
 	vc4_program_init(vc4);
 
 	struct vc4_bo *bo = vc4_bo_create(0x8000, 0x1000);
 
 	vc4_init_cl(&vc4->bcl, bo->paddr, bo->vaddr, 0);
-	vc4_init_cl(&vc4->rcl, bo->paddr + BUFFER_RENDER_CONTROL,
-		    bo->vaddr + BUFFER_RENDER_CONTROL, 0);
 	vc4_init_cl(&vc4->shader_rec, bo->paddr + BUFFER_SHADER_OFFSET,
 		    bo->vaddr + BUFFER_SHADER_OFFSET, 0);
 

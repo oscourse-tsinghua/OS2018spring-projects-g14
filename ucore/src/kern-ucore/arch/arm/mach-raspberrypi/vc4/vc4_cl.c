@@ -13,14 +13,17 @@ void vc4_reset_cl(struct vc4_cl *cl)
 	cl->next = cl->vaddr;
 }
 
-void cl_dump(struct vc4_cl *cl, size_t cols, const char *name)
+void vc4_dump_cl(void *cl, size_t size, size_t cols, const char *name)
 {
-	kprintf("cl_dump %s:\n", name);
-	void *ptr;
-	for (ptr = cl->vaddr; ptr < cl->next;) {
+	kprintf("vc4_dump_cl %s:\n", name);
+
+	uint32_t offset = 0;
+	uint8_t *ptr = cl;
+
+	while (offset < size) {
 		kprintf("%08x: ", ptr);
 		int i;
-		for (i = 0; i < cols && ptr < cl->next; i++, ptr++)
+		for (i = 0; i < cols && offset < size; i++, ptr++, offset++)
 			kprintf("%02x ", *(uint8_t *)ptr);
 		kprintf("\n");
 	}

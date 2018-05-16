@@ -9,7 +9,13 @@
 
 static int vc4_probe(struct device *dev)
 {
+	struct vc4_dev *vc4;
 	int ret = 0;
+
+	vc4 = (struct vc4_dev *)kmalloc(sizeof(struct vc4_dev));
+	if (!vc4)
+		return -E_NOMEM;
+
 	if (fb_check() == 0) {
 		ret = -E_NODEV;
 		kprintf("VC4: no framebuffer found.\n");
@@ -29,13 +35,16 @@ static int vc4_probe(struct device *dev)
 		goto fail;
 	}
 
-	dev->driver_data = get_fb_info();
+	vc4->dev = dev;
+	vc4->fb = get_fb_info();
+	dev->driver_data = vc4;
 
 	kprintf("VideoCore IV GPU initialized.\n");
 
 	goto out;
 
 fail:
+	kfree(vc4);
 	kprintf("VideoCore IV GPU failed to initialize.\n");
 out:
 	return ret;
@@ -53,16 +62,16 @@ static int vc4_close(struct device *dev)
 
 static int vc4_ioctl(struct device *dev, int op, void *data)
 {
-	struct fb_info *info = (struct fb_info *)dev->driver_data;
-	if (!info)
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	if (!vc4)
 		return -E_NODEV;
 
 	int ret = 0;
-	extern void vc4_hello_triangle(struct fb_info * fb);
+	extern void vc4_hello_triangle(struct device *dev);
 
 	switch (op) {
 	case DRM_IOCTL_VC4_SUBMIT_CL:
-		vc4_hello_triangle(info);
+		vc4_hello_triangle(dev);
 		break;
 	default:
 		ret = -E_INVAL;
@@ -109,7 +118,7 @@ int dev_init_vc4()
 		goto free_node;
 	}
 
-	goto out;
+	return 0;
 
 free_node:
 	dev_kill_inode(node);

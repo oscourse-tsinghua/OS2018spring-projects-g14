@@ -13,31 +13,6 @@ struct shaded_vertex {
 	float r, g, b;
 };
 
-static void vc4_rcl_tile_calls(struct vc4_context *vc4, uint32_t xtiles,
-			       uint32_t ytiles, struct vc4_bo *tile_alloc)
-{
-	int x, y;
-	for (x = 0; x < xtiles; x++) {
-		for (y = 0; y < ytiles; y++) {
-			cl_u8(&vc4->rcl, VC4_PACKET_TILE_COORDINATES);
-			cl_u8(&vc4->rcl, x);
-			cl_u8(&vc4->rcl, y);
-
-			cl_u8(&vc4->rcl, VC4_PACKET_BRANCH_TO_SUB_LIST);
-			cl_u32(&vc4->rcl,
-			       tile_alloc->paddr + (y * xtiles + x) * 32);
-
-			if (x == xtiles - 1 && y == ytiles - 1) {
-				cl_u8(&vc4->rcl,
-				      VC4_PACKET_STORE_MS_TILE_BUFFER_AND_EOF);
-			} else {
-				cl_u8(&vc4->rcl,
-				      VC4_PACKET_STORE_MS_TILE_BUFFER);
-			}
-		}
-	}
-}
-
 static void vc4_emit_state(struct vc4_context *vc4, uint32_t width,
 			   uint32_t height)
 {
@@ -159,10 +134,6 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	cl_u32(&vc4->bcl, ibo->paddr);
 	cl_u32(&vc4->bcl, 16); // Maximum index
 
-	cl_u8(&vc4->bcl, VC4_PACKET_FLUSH_ALL);
-	cl_u8(&vc4->bcl, VC4_PACKET_NOP);
-	cl_u8(&vc4->bcl, VC4_PACKET_HALT);
-
 	// Shader Record
 	cl_u8(&vc4->shader_rec, 0);
 	cl_u8(&vc4->shader_rec, sizeof(struct shaded_vertex)); // stride
@@ -174,43 +145,12 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 
 	vc4->shader_rec_count++;
 
-	// RCL
-	cl_u8(&vc4->rcl, VC4_PACKET_CLEAR_COLORS);
-	cl_u32(&vc4->rcl, 0x282c34);
-	cl_u32(&vc4->rcl, 0x282c34);
-	cl_u32(&vc4->rcl, 0);
-	cl_u8(&vc4->rcl, 0);
-
-	cl_u8(&vc4->rcl, VC4_PACKET_TILE_RENDERING_MODE_CONFIG);
-	cl_u32(&vc4->rcl, vc4->framebuffer->fb_bus_address);
-	cl_u16(&vc4->rcl, width);
-	cl_u16(&vc4->rcl, height);
-	cl_u8(&vc4->rcl,
-	      VC4_SET_FIELD(vc4->framebuffer->var.bits_per_pixel == 16 ?
-				    VC4_RENDER_CONFIG_FORMAT_BGR565 :
-				    VC4_RENDER_CONFIG_FORMAT_RGBA8888,
-			    VC4_RENDER_CONFIG_FORMAT) |
-		      VC4_SET_FIELD(VC4_TILING_FORMAT_LINEAR,
-				    VC4_RENDER_CONFIG_MEMORY_FORMAT));
-	cl_u8(&vc4->rcl, 0);
-
-	// Do a store of the first tile to force the tile buffer to be cleared
-	cl_u8(&vc4->rcl, VC4_PACKET_TILE_COORDINATES);
-	cl_u8(&vc4->rcl, 0);
-	cl_u8(&vc4->rcl, 0);
-
-	cl_u8(&vc4->rcl, VC4_PACKET_STORE_TILE_BUFFER_GENERAL);
-	cl_u16(&vc4->rcl, 0); // Store nothing (just clear)
-	cl_u32(&vc4->rcl, 0); // no address is needed
-
-	vc4_rcl_tile_calls(vc4, tilew, tileh, tile_alloc);
-
 	vc4_flush(vc4);
 }
 
-void vc4_hello_triangle(struct fb_info *fb)
+void vc4_hello_triangle(struct device *dev)
 {
-	struct vc4_context *vc4 = vc4_context_create(fb);
+	struct vc4_context *vc4 = vc4_context_create(dev);
 
 	vc4_draw_vbo(vc4);
 }

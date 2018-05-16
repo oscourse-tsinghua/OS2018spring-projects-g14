@@ -5,7 +5,7 @@
 #include "vc4_drm.h"
 #include "vc4_regs.h"
 
-static void submit_cl(uint32_t thread, uint32_t start, uint32_t end)
+static void submit_cl(struct device *dev, uint32_t thread, uint32_t start, uint32_t end)
 {
 	/* Set the current and end address of the control list.
 	 * Writing the end register is what starts the job.
@@ -21,7 +21,7 @@ static void submit_cl(uint32_t thread, uint32_t start, uint32_t end)
 	V3D_WRITE(V3D_CTNEA(thread), end);
 }
 
-static void vc4_flush_caches()
+static void vc4_flush_caches(struct device *dev)
 {
 	/* Flush the GPU L2 caches.  These caches sit on top of system
 	 * L3 (the 128kb or so shared with the CPU), and are
@@ -35,12 +35,12 @@ static void vc4_flush_caches()
 				       VC4_SET_FIELD(0xf, V3D_SLCACTL_ICC));
 }
 
-static void vc4_submit_next_bin_job(struct vc4_exec_info *exec)
+static void vc4_submit_next_bin_job(struct device *dev, struct vc4_exec_info *exec)
 {
 	if (!exec)
 		return;
 
-	vc4_flush_caches();
+	vc4_flush_caches(dev);
 
 	/* Either put the job in the binner if it uses the binner, or
 	 * immediately move it to the to-be-rendered queue.
@@ -52,13 +52,13 @@ static void vc4_submit_next_bin_job(struct vc4_exec_info *exec)
 	// reset binning frame count
 	V3D_WRITE(V3D_BFC, 1);
 
-	submit_cl(0, exec->ct0ca, exec->ct0ea);
+	submit_cl(dev, 0, exec->ct0ca, exec->ct0ea);
 
 	// wait for binning to finish
 	while (V3D_READ(V3D_BFC) == 0);
 }
 
-static void vc4_submit_next_render_job(struct vc4_exec_info *exec)
+static void vc4_submit_next_render_job(struct device *dev, struct vc4_exec_info *exec)
 {
 	if (!exec)
 		return;
@@ -66,7 +66,7 @@ static void vc4_submit_next_render_job(struct vc4_exec_info *exec)
 	// reset rendering frame count
 	V3D_WRITE(V3D_RFC, 1);
 
-	submit_cl(1, exec->ct1ca, exec->ct1ea);
+	submit_cl(dev, 1, exec->ct1ca, exec->ct1ea);
 
 	// wait for render to finish
 	while (V3D_READ(V3D_RFC) == 0);
@@ -81,29 +81,50 @@ static void vc4_submit_next_render_job(struct vc4_exec_info *exec)
  * then bump the end address.  That's a change for a later date,
  * though.
  */
-static void vc4_queue_submit(struct vc4_exec_info *exec)
+static void vc4_queue_submit(struct device *dev, struct vc4_exec_info *exec)
 {
 	// TODO
-	vc4_submit_next_bin_job(exec);
-	vc4_submit_next_render_job(exec);
+	vc4_submit_next_bin_job(dev, exec);
+	vc4_submit_next_render_job(dev, exec);
 }
 
-static int vc4_get_bcl(struct vc4_exec_info *exec)
+static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 {
-	// TODO
 	struct drm_vc4_submit_cl *args = exec->args;
+	void *temp = (void *)(uint32_t)args->bin_cl;
+	void *bin;
+	int ret = 0;
+	uint32_t bin_offset = 0;
+	uint32_t shader_rec_offset =
+		ROUNDUP(bin_offset + args->bin_cl_size, 16);
+
+	// TODO
+
+	bin = temp + bin_offset;
 	exec->ct0ca = args->bin_cl;
-	exec->ct0ea = exec->ct0ca + args->bin_cl_size;
+
+	ret = vc4_validate_bin_cl(dev, bin, bin, exec);
+	if (ret)
+		goto fail;
+
+	ret = vc4_validate_shader_recs(dev, exec);
+	if (ret)
+		goto fail;
+
 	return 0;
+
+fail:
+	return ret;
 }
 
-static void vc4_complete_exec(struct vc4_exec_info *exec)
+static void vc4_complete_exec(struct device *dev, struct vc4_exec_info *exec)
 {
 	kfree(exec);
 }
 
 /**
  * vc4_submit_cl_ioctl() - Submits a job (frame) to the VC4.
+ * @dev: vc4 device
  * @data: ioctl argument
  *
  * This is the main entrypoint for userspace to submit a 3D frame to
@@ -112,7 +133,7 @@ static void vc4_complete_exec(struct vc4_exec_info *exec)
  * to the framebuffer described in the ioctl, using the command lists
  * that the 3D engine's binner will produce.
  */
-int vc4_submit_cl_ioctl(void *data)
+int vc4_submit_cl_ioctl(struct device *dev, void *data)
 {
 	struct drm_vc4_submit_cl *args = data;
 	struct vc4_exec_info *exec;
@@ -126,7 +147,7 @@ int vc4_submit_cl_ioctl(void *data)
 
 	exec->args = args;
 	if (exec->args->bin_cl_size != 0) {
-		ret = vc4_get_bcl(exec);
+		ret = vc4_get_bcl(dev, exec);
 		if (ret)
 			goto fail;
 	} else {
@@ -134,7 +155,7 @@ int vc4_submit_cl_ioctl(void *data)
 		exec->ct0ea = 0;
 	}
 
-	ret = vc4_get_rcl(exec);
+	ret = vc4_get_rcl(dev, exec);
 	if (ret)
 		goto fail;
 
@@ -143,12 +164,12 @@ int vc4_submit_cl_ioctl(void *data)
 	 */
 	exec->args = NULL;
 
-	vc4_queue_submit(exec);
+	vc4_queue_submit(dev, exec);
 
 	return 0;
 
 fail:
-	vc4_complete_exec(exec);
+	vc4_complete_exec(dev, exec);
 
 	return ret;
 }

@@ -37,7 +37,6 @@ struct drm_vc4_submit_cl {
 	 * to the tile allocation BO.
 	 */
 	__u64 bin_cl;
-	__u64 render_cl; // FIXME generate rcl in kernel
 
 	/* Pointer to the shader records.
 	 *
@@ -69,7 +68,6 @@ struct drm_vc4_submit_cl {
 
 	/* Size in bytes of the binner command list. */
 	__u32 bin_cl_size;
-	__u32 render_cl_size; // FIXME generate rcl in kernel
 	/* Size in bytes of the set of shader records. */
 	__u32 shader_rec_size;
 	/* Number of shader records.
