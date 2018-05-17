@@ -6,15 +6,36 @@
 #include "vc4_packet.h"
 
 #define VALIDATE_ARGS                                                          \
-	struct vc4_exec_info *exec, void *validated, void *untrusted
+	struct device *dev, struct vc4_exec_info *exec, void *validated,       \
+		void *untrusted
 
 static int validate_tile_binning_config(VALIDATE_ARGS)
 {
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	uint32_t tile_state_size;
+	uint32_t tile_count, bin_addr;
+
 	exec->bin_tiles_x = *(uint8_t *)(untrusted + 12);
 	exec->bin_tiles_y = *(uint8_t *)(untrusted + 13);
-	exec->tile_alloc_offset = get_unaligned_32(untrusted + 0);
+	tile_count = exec->bin_tiles_x * exec->bin_tiles_y;
 
-	// TODO
+	bin_addr = vc4->bin_bo->paddr;
+
+	/* The tile state data array is 48 bytes per tile, and we put it at
+	 * the start of a BO containing both it and the tile alloc.
+	 */
+	tile_state_size = 48 * tile_count;
+
+	/* Since the tile alloc array will follow us, align. */
+	exec->tile_alloc_offset = bin_addr + ROUNDUP(tile_state_size, 4096);
+
+	/* tile alloc address. */
+	put_unaligned_32(validated + 0, exec->tile_alloc_offset);
+	/* tile alloc size. */
+	put_unaligned_32(validated + 4, bin_addr + vc4->bin_alloc_size -
+						exec->tile_alloc_offset);
+	/* tile state address. */
+	put_unaligned_32(validated + 8, bin_addr);
 
 	return 0;
 }
@@ -27,8 +48,8 @@ static int validate_tile_binning_config(VALIDATE_ARGS)
 static const struct cmd_info {
 	uint16_t len;
 	const char *name;
-	int (*func)(struct vc4_exec_info *exec, void *validated,
-		    void *untrusted);
+	int (*func)(struct device *dev, struct vc4_exec_info *exec,
+		    void *validated, void *untrusted);
 } cmd_info[] = {
 	VC4_DEFINE_PACKET(VC4_PACKET_HALT, NULL),
 	VC4_DEFINE_PACKET(VC4_PACKET_NOP, NULL),
@@ -108,7 +129,8 @@ int vc4_validate_bin_cl(struct device *dev, void *validated, void *unvalidated,
 		// if (cmd != VC4_PACKET_GEM_HANDLES)
 		// 	memcpy(dst_pkt, src_pkt, info->len);
 
-		if (info->func && info->func(exec, dst_pkt + 1, src_pkt + 1)) {
+		if (info->func &&
+		    info->func(dev, exec, dst_pkt + 1, src_pkt + 1)) {
 			kprintf("vc4: 0x%08x: packet %d (%s) failed to validate\n",
 				src_offset, cmd, info->name);
 			return -E_INVAL;

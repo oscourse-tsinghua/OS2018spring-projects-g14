@@ -15,8 +15,6 @@ struct vc4_context {
 	struct vc4_cl shader_rec;
 	uint32_t shader_rec_count;
 
-	struct device *dev; // FIXME temporary
-
 	/**
 	 * Set if some drawing (triangles, blits, or just a glClear()) has
 	 * been done to the FBO, meaning that we need to

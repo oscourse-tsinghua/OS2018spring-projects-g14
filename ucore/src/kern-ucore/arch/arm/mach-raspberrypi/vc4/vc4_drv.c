@@ -7,12 +7,36 @@
 #include "bcm2708_fb.h"
 #include "mailbox_property.h"
 
+static void bo_map_init(struct vc4_bo *bo)
+{
+	memset(bo, 0, sizeof(struct vc4_bo) * VC4_DEV_BO_NENTRY);
+}
+
+static int vc4_allocate_bin_bo(struct device *dev)
+{
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct vc4_bo *bo;
+
+	uint32_t size = 512 * 1024;
+	bo = vc4_bo_create(dev, size, 0x1000);
+	if (bo == NULL) {
+		return -E_NOMEM;
+	}
+
+	vc4->bin_bo = bo;
+	vc4->bin_alloc_size = size;
+
+	return 0;
+}
+
 static int vc4_probe(struct device *dev)
 {
 	struct vc4_dev *vc4;
 	int ret = 0;
 
-	vc4 = (struct vc4_dev *)kmalloc(sizeof(struct vc4_dev));
+	static_assert((int)VC4_DEV_BO_NENTRY > 128);
+	vc4 = (struct vc4_dev *)kmalloc(sizeof(struct vc4_dev) +
+					VC4_DEV_BUFSIZE);
 	if (!vc4)
 		return -E_NOMEM;
 
@@ -37,7 +61,17 @@ static int vc4_probe(struct device *dev)
 
 	vc4->dev = dev;
 	vc4->fb = get_fb_info();
+	vc4->handle_bo_map = (struct vc4_bo *)(vc4 + 1);
 	dev->driver_data = vc4;
+
+	bo_map_init(vc4->handle_bo_map);
+
+	if ((ret = vc4_allocate_bin_bo(dev))) {
+		kprintf("VC4: cannot alloc bin bo.\n");
+		goto fail;
+	}
+
+	current_dev = dev;
 
 	kprintf("VideoCore IV GPU initialized.\n");
 
@@ -48,6 +82,10 @@ fail:
 	kprintf("VideoCore IV GPU failed to initialize.\n");
 out:
 	return ret;
+}
+
+static void vc4_gem_destroy()
+{
 }
 
 static int vc4_open(struct device *dev, uint32_t open_flags)

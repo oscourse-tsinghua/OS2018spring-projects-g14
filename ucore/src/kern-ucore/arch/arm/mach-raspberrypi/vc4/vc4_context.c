@@ -80,7 +80,7 @@ void vc4_flush(struct vc4_context *vc4)
 	// vc4_dump_cl(vc4->shader_rec.vaddr, cl_offset(&vc4->shader_rec), 8,
 	// 	    "shader_rec");
 
-	int ret = vc4_submit_cl_ioctl(vc4->dev, &submit);
+	int ret = vc4_submit_cl_ioctl(current_dev, &submit);
 	if (ret) {
 		kprintf("vc4: submit failed: %e.\n", ret);
 	}
@@ -106,12 +106,11 @@ struct vc4_context *vc4_context_create(struct device *dev)
 		return NULL;
 
 	memset(vc4, 0, sizeof(struct vc4_context));
-	vc4->dev = dev;
 	vc4->framebuffer = to_vc4_dev(dev)->fb;
 
 	vc4_program_init(vc4);
 
-	struct vc4_bo *bo = vc4_bo_create(0x8000, 0x1000);
+	struct vc4_bo *bo = vc4_bo_create(dev, 0x8000, 0x1000);
 
 	vc4_init_cl(&vc4->bcl, bo->paddr, bo->vaddr, 0);
 	vc4_init_cl(&vc4->shader_rec, bo->paddr + BUFFER_SHADER_OFFSET,

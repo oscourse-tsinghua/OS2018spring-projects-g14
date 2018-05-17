@@ -111,4 +111,18 @@ struct drm_vc4_submit_cl {
 	__u64 seqno;
 };
 
+struct drm_vc4_create_bo {
+	__u32 size;
+	__u32 align;
+	/** Returned GEM handle for the BO. */
+	__u32 handle;
+};
+
+struct drm_vc4_mmap_bo {
+	/** Handle for the object being mapped. */
+	__u32 handle;
+	/** offset into the drm node to use for subsequent mmap call. */
+	__u32 offset;
+};
+
 #endif // VC4_DRM_H

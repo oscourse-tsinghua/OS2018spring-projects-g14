@@ -1,4 +1,4 @@
-#include "vc4_drv.h"
+#include "vc4_bufmgr.h"
 #include "vc4_context.h"
 
 static struct vc4_bo *vc4_create_fs()
@@ -15,8 +15,9 @@ static struct vc4_bo *vc4_create_fs()
 		0x009e7000, 0x500009e7, /* nop; nop; sbdone */
 	};
 
-	struct vc4_bo *fs = vc4_bo_create(sizeof(ins), 1);
-	memcpy(fs->vaddr, ins, sizeof(ins));
+	struct vc4_bo *fs = vc4_bo_alloc(sizeof(ins), 1);
+	void *map = vc4_bo_map(fs);
+	memcpy(map, ins, sizeof(ins));
 
 	return fs;
 }

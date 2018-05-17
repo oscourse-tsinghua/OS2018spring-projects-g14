@@ -4,7 +4,7 @@
 
 #include "vc4_context.h"
 #include "vc4_cl.h"
-#include "vc4_drv.h"
+#include "vc4_bufmgr.h"
 #include "vc4_packet.h"
 
 struct shaded_vertex {
@@ -51,7 +51,9 @@ static struct vc4_bo *get_vbo(struct vc4_context *vc4, uint32_t width,
 			      uint32_t height)
 {
 	struct vc4_bo *bo;
-	bo = vc4_bo_create(sizeof(struct shaded_vertex) * 12, 0x10);
+	void *map;
+	bo = vc4_bo_alloc(sizeof(struct shaded_vertex) * 12, 0x10);
+	map = vc4_bo_map(bo);
 
 	float sqrt3 = 1.7320508075688772f;
 	float sqrt6 = 2.449489742783178;
@@ -66,14 +68,14 @@ static struct vc4_bo *get_vbo(struct vc4_context *vc4, uint32_t width,
 	      z4 = z0; // + sqrt6 / 3 * size;
 
 	uint32_t offset = 0;
-	offset += emit_triangle(bo->vaddr + offset, 1, 1, 1, x1, y1 - 10, z1,
-				x2 - 10, y2 + 10, z2, x3 + 10, y3 + 10, z3);
-	offset += emit_triangle(bo->vaddr + offset, 1, 0, 0, x4, y4, z4, x2, y2,
-				z2, x1, y1, z1);
-	offset += emit_triangle(bo->vaddr + offset, 0, 0, 1, x4, y4, z4, x1, y1,
-				z1, x3, y3, z3);
-	offset += emit_triangle(bo->vaddr + offset, 0, 1, 0, x4, y4, z4, x2, y2,
-				z2, x3, y3, z3);
+	offset += emit_triangle(map + offset, 1, 1, 1, x1, y1 - 10, z1, x2 - 10,
+				y2 + 10, z2, x3 + 10, y3 + 10, z3);
+	offset += emit_triangle(map + offset, 1, 0, 0, x4, y4, z4, x2, y2, z2,
+				x1, y1, z1);
+	offset += emit_triangle(map + offset, 0, 0, 1, x4, y4, z4, x1, y1, z1,
+				x3, y3, z3);
+	offset += emit_triangle(map + offset, 0, 1, 0, x4, y4, z4, x2, y2, z2,
+				x3, y3, z3);
 
 	return bo;
 }
@@ -84,8 +86,11 @@ static struct vc4_bo *get_ibo(struct vc4_context *vc4)
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11
 	};
 	struct vc4_bo *bo;
-	bo = vc4_bo_create(sizeof(indices), 1);
-	memcpy(bo->vaddr, indices, sizeof(indices));
+	void *map;
+
+	bo = vc4_bo_alloc(sizeof(indices), 1);
+	map = vc4_bo_map(bo);
+	memcpy(map, indices, sizeof(indices));
 
 	return bo;
 }
@@ -98,9 +103,8 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	uint32_t tileh = (height + 63) / 64; // Tiles down
 
 	size_t tile_alloc_size = 0x8000;
-	struct vc4_bo *tile_alloc = vc4_bo_create(tile_alloc_size, 0x1000);
-	struct vc4_bo *tile_state = vc4_bo_create(48 * tilew * tileh, 0x10);
-	struct vc4_bo *fs_uniform = vc4_bo_create(0x1000, 1);
+	struct vc4_bo *fs_uniform = vc4_bo_alloc(0x1000, 1);
+	vc4_bo_map(fs_uniform);
 
 	struct vc4_bo *ibo = get_ibo(vc4);
 	struct vc4_bo *vbo = get_vbo(vc4, width, height);
@@ -110,9 +114,9 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	//   Tile state data is 48 bytes per tile, I think it can be thrown away
 	//   as soon as binning is finished.
 	cl_u8(&vc4->bcl, VC4_PACKET_TILE_BINNING_MODE_CONFIG);
-	cl_u32(&vc4->bcl, tile_alloc->paddr);
-	cl_u32(&vc4->bcl, tile_alloc_size); /* tile allocation memory size */
-	cl_u32(&vc4->bcl, tile_state->paddr); // 16 byte aligned
+	cl_u32(&vc4->bcl, 0);
+	cl_u32(&vc4->bcl, 0);
+	cl_u32(&vc4->bcl, 0);
 	cl_u8(&vc4->bcl, tilew);
 	cl_u8(&vc4->bcl, tileh);
 	cl_u8(&vc4->bcl, VC4_BIN_CONFIG_AUTO_INIT_TSDA);
@@ -131,7 +135,7 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	cl_u8(&vc4->bcl, VC4_PACKET_GL_INDEXED_PRIMITIVE);
 	cl_u8(&vc4->bcl, 0x04); // 8bit index, trinagles
 	cl_u32(&vc4->bcl, 12); // Length
-	cl_u32(&vc4->bcl, ibo->paddr);
+	cl_u32(&vc4->bcl, ibo->map);
 	cl_u32(&vc4->bcl, 16); // Maximum index
 
 	// Shader Record
@@ -139,9 +143,9 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	cl_u8(&vc4->shader_rec, sizeof(struct shaded_vertex)); // stride
 	cl_u8(&vc4->shader_rec, 0xcc); // num uniforms (not used)
 	cl_u8(&vc4->shader_rec, 3); // num varyings
-	cl_u32(&vc4->shader_rec, vc4->prog.fs->paddr);
-	cl_u32(&vc4->shader_rec, fs_uniform->paddr);
-	cl_u32(&vc4->shader_rec, vbo->paddr); // 128-bit aligned
+	cl_u32(&vc4->shader_rec, vc4->prog.fs->map);
+	cl_u32(&vc4->shader_rec, fs_uniform->map);
+	cl_u32(&vc4->shader_rec, vbo->map); // 128-bit aligned
 
 	vc4->shader_rec_count++;
 
