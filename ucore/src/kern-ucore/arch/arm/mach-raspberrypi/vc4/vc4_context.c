@@ -17,8 +17,8 @@ static void dump_fbo(struct vc4_context *vc4)
 		for (x = -6; x < 6; x++) {
 			uint32_t bytes_per_pixel = fb->bits_per_pixel >> 3;
 			uint32_t addr =
-				(y + center_y) * bytes_per_pixel * fb->width +
-				(x + center_x) * bytes_per_pixel;
+				((y + center_y) * fb->width + (x + center_x)) *
+				bytes_per_pixel;
 			char *ptr = fb->screen_base + addr;
 			int k;
 			for (k = bytes_per_pixel - 1; k >= 0; k--)
@@ -106,8 +106,6 @@ void vc4_flush(struct vc4_context *vc4)
 
 struct vc4_context *vc4_context_create(void)
 {
-#define BUFFER_SHADER_OFFSET 0x80
-
 	struct vc4_context *vc4;
 
 	vc4 = (struct vc4_context *)kmalloc(sizeof(struct vc4_context));
