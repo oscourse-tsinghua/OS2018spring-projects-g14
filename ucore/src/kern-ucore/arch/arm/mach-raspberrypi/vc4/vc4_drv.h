@@ -52,8 +52,37 @@ struct vc4_exec_info {
 	/* This is the array of BOs that were looked up at the start of exec.
 	 * Command validation will use indices into this array.
 	 */
-	struct drm_gem_cma_object **bo;
+	struct vc4_bo **bo;
 	uint32_t bo_count;
+
+	/* Current unvalidated indices into @bo loaded by the non-hardware
+	 * VC4_PACKET_GEM_HANDLES.
+	 */
+	uint32_t bo_index[2];
+
+	/* This is the BO where we store the validated command lists, shader
+	 * records, and uniforms.
+	 */
+	struct vc4_bo *exec_bo;
+
+	/**
+	 * This tracks the per-shader-record state (packet 64) that
+	 * determines the length of the shader record and the offset
+	 * it's expected to be found at.  It gets read in from the
+	 * command lists.
+	 */
+	struct vc4_shader_state {
+		uint32_t addr;
+		/* Maximum vertex index referenced by any primitive using this
+		 * shader state.
+		 */
+		uint32_t max_index;
+	} *shader_state;
+
+	/** How many shader states the user declared they were using. */
+	uint32_t shader_state_size;
+	/** How many shader state records the validator has seen. */
+	uint32_t shader_state_count;
 
 	uint8_t bin_tiles_x, bin_tiles_y;
 	/* Physical address of the start of the tile alloc array
@@ -67,6 +96,19 @@ struct vc4_exec_info {
 	 */
 	uint32_t ct0ca, ct0ea;
 	uint32_t ct1ca, ct1ea;
+
+	/* Pointer to the unvalidated bin CL (if present). */
+	void *bin_u;
+
+	/* Pointers to the shader recs.  These paddr gets incremented as CL
+	 * packets are relocated in validate_gl_shader_state, and the vaddrs
+	 * (u and v) get incremented and size decremented as the shader recs
+	 * themselves are validated.
+	 */
+	void *shader_rec_u;
+	void *shader_rec_v;
+	uint32_t shader_rec_p;
+	uint32_t shader_rec_size;
 };
 
 #define V3D_READ(offset) inw(V3D_BASE + offset)

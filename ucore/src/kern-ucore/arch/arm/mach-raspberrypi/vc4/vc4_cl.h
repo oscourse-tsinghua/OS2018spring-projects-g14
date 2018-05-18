@@ -3,16 +3,23 @@
 
 #include <types.h>
 
+#include "vc4_packet.h"
+
+struct vc4_bo;
+struct vc4_context;
+
 struct vc4_cl {
 	uint32_t paddr;
 	void *vaddr;
 	void *next;
+	void *reloc_next;
 	size_t size;
 };
 
 void vc4_init_cl(struct vc4_cl *cl, uint32_t paddr, void *vaddr, size_t size);
 void vc4_reset_cl(struct vc4_cl *cl);
 void vc4_dump_cl(void *cl, size_t size, size_t cols, const char *name);
+uint32_t vc4_gem_hindex(struct vc4_context *vc4, struct vc4_bo *bo);
 
 struct __attribute__((__packed__)) unaligned_16 { uint16_t x; };
 struct __attribute__((__packed__)) unaligned_32 { uint32_t x; };
@@ -83,6 +90,33 @@ static inline void cl_f(struct vc4_cl *cl, float f)
 static inline void cl_aligned_f(struct vc4_cl *cl, float f)
 {
 	cl_aligned_u32(cl, *((uint32_t *)&f));
+}
+
+static inline void cl_start_reloc(struct vc4_cl *cl, uint32_t n)
+{
+	assert(n == 1 || n == 2);
+
+	cl_u8(cl, VC4_PACKET_GEM_HANDLES);
+	cl->reloc_next = cl->next;
+	cl_u32(cl, 0); /* Space where hindex will be written. */
+	cl_u32(cl, 0); /* Space where hindex will be written. */
+}
+
+static inline void cl_start_shader_reloc(struct vc4_cl *cl, uint32_t n)
+{
+	cl->reloc_next = cl->next;
+
+	/* Reserve the space where hindex will be written. */
+	cl_advance(cl, n * 4);
+}
+
+static inline void cl_reloc(struct vc4_cl *cl, struct vc4_context *vc4,
+			    struct vc4_bo *bo, uint32_t offset)
+{
+	put_unaligned_32(cl->reloc_next, vc4_gem_hindex(vc4, bo));
+	cl->reloc_next += 4;
+
+	cl_u32(cl, offset);
 }
 
 #endif /* VC4_CL_H */

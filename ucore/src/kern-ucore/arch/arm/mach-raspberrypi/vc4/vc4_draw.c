@@ -102,7 +102,6 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	uint32_t tilew = (width + 63) / 64; // Tiles across
 	uint32_t tileh = (height + 63) / 64; // Tiles down
 
-	size_t tile_alloc_size = 0x8000;
 	struct vc4_bo *fs_uniform = vc4_bo_alloc(0x1000, 1);
 	vc4_bo_map(fs_uniform);
 
@@ -130,22 +129,27 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	vc4_emit_state(vc4, width, height);
 
 	cl_u8(&vc4->bcl, VC4_PACKET_NV_SHADER_STATE);
-	cl_u32(&vc4->bcl, vc4->shader_rec.paddr); // 16 byte aligned
+	cl_u32(&vc4->bcl, 0); // offset into shader_rec
 
+	uint32_t mode = 4;
+	uint32_t index_size = 1;
+	cl_start_reloc(&vc4->bcl, 1);
 	cl_u8(&vc4->bcl, VC4_PACKET_GL_INDEXED_PRIMITIVE);
-	cl_u8(&vc4->bcl, 0x04); // 8bit index, trinagles
+	cl_u8(&vc4->bcl, mode | (index_size == 2 ? VC4_INDEX_BUFFER_U16 :
+						   VC4_INDEX_BUFFER_U8));
 	cl_u32(&vc4->bcl, 12); // Length
-	cl_u32(&vc4->bcl, ibo->map);
-	cl_u32(&vc4->bcl, 16); // Maximum index
+	cl_reloc(&vc4->bcl, vc4, ibo, 0);
+	cl_u32(&vc4->bcl, 12); // Maximum index
 
 	// Shader Record
+	cl_start_shader_reloc(&vc4->shader_rec, 3);
 	cl_u8(&vc4->shader_rec, 0);
 	cl_u8(&vc4->shader_rec, sizeof(struct shaded_vertex)); // stride
 	cl_u8(&vc4->shader_rec, 0xcc); // num uniforms (not used)
 	cl_u8(&vc4->shader_rec, 3); // num varyings
-	cl_u32(&vc4->shader_rec, vc4->prog.fs->map);
-	cl_u32(&vc4->shader_rec, fs_uniform->map);
-	cl_u32(&vc4->shader_rec, vbo->map); // 128-bit aligned
+	cl_reloc(&vc4->shader_rec, vc4, vc4->prog.fs, 0);
+	cl_reloc(&vc4->shader_rec, vc4, fs_uniform, 0);
+	cl_reloc(&vc4->shader_rec, vc4, vbo, 0);
 
 	vc4->shader_rec_count++;
 

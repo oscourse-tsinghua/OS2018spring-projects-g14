@@ -4,6 +4,7 @@
 #include <types.h>
 
 #include "vc4_cl.h"
+#include "vc4_bufmgr.h"
 #include "bcm2708_fb.h"
 
 struct vc4_program_stateobj {
@@ -13,6 +14,7 @@ struct vc4_program_stateobj {
 struct vc4_context {
 	struct vc4_cl bcl;
 	struct vc4_cl shader_rec;
+	struct vc4_cl bo_handles;
 	uint32_t shader_rec_count;
 
 	/**

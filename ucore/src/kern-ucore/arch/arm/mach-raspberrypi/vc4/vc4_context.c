@@ -53,6 +53,8 @@ void vc4_flush(struct vc4_context *vc4)
 	submit.shader_rec = vc4->shader_rec.paddr;
 	submit.shader_rec_size = cl_offset(&vc4->shader_rec);
 	submit.shader_rec_count = vc4->shader_rec_count;
+	submit.bo_handles = (uint32_t)vc4->bo_handles.vaddr;
+	submit.bo_handle_count = cl_offset(&vc4->bo_handles) / 4;
 
 	const uint32_t tile_width = 64, tile_height = 64;
 	uint32_t draw_width = vc4->framebuffer->var.xres;
@@ -79,6 +81,8 @@ void vc4_flush(struct vc4_context *vc4)
 	// vc4_dump_cl(vc4->bcl.vaddr, cl_offset(&vc4->bcl), 8, "bcl");
 	// vc4_dump_cl(vc4->shader_rec.vaddr, cl_offset(&vc4->shader_rec), 8,
 	// 	    "shader_rec");
+	// vc4_dump_cl(vc4->bo_handles.vaddr, cl_offset(&vc4->bo_handles), 8,
+	// 	    "bo_handles");
 
 	int ret = vc4_submit_cl_ioctl(current_dev, &submit);
 	if (ret) {
@@ -87,6 +91,7 @@ void vc4_flush(struct vc4_context *vc4)
 
 	vc4_reset_cl(&vc4->bcl);
 	vc4_reset_cl(&vc4->shader_rec);
+	vc4_reset_cl(&vc4->bo_handles);
 	vc4->shader_rec_count = 0;
 
 	vc4->needs_flush = 0;
@@ -97,7 +102,6 @@ void vc4_flush(struct vc4_context *vc4)
 struct vc4_context *vc4_context_create(struct device *dev)
 {
 #define BUFFER_SHADER_OFFSET 0x80
-#define BUFFER_RENDER_CONTROL 0x1000
 
 	struct vc4_context *vc4;
 
@@ -115,6 +119,10 @@ struct vc4_context *vc4_context_create(struct device *dev)
 	vc4_init_cl(&vc4->bcl, bo->paddr, bo->vaddr, 0);
 	vc4_init_cl(&vc4->shader_rec, bo->paddr + BUFFER_SHADER_OFFSET,
 		    bo->vaddr + BUFFER_SHADER_OFFSET, 0);
+
+	uint32_t bo_handles_base = (uint32_t)kmalloc(0x1000);
+	vc4_init_cl(&vc4->bo_handles, bo_handles_base, (void *)bo_handles_base,
+		    0);
 
 	return vc4;
 }

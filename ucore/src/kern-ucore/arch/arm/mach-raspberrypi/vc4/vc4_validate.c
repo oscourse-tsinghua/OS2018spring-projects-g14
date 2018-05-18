@@ -1,4 +1,5 @@
 #include <error.h>
+#include <assert.h>
 
 #include "vc4_cl.h"
 #include "vc4_drv.h"
@@ -8,6 +9,77 @@
 #define VALIDATE_ARGS                                                          \
 	struct device *dev, struct vc4_exec_info *exec, void *validated,       \
 		void *untrusted
+
+struct vc4_bo *vc4_use_bo(struct vc4_exec_info *exec, uint32_t hindex)
+{
+	if (hindex >= exec->bo_count) {
+		kprintf("vc4: BO index %d greater than BO count %d\n", hindex,
+			exec->bo_count);
+		return NULL;
+	}
+
+	return exec->bo[hindex];
+}
+
+static struct vc4_bo *vc4_use_handle(struct vc4_exec_info *exec,
+				     uint32_t gem_handles_packet_index)
+{
+	return vc4_use_bo(exec, exec->bo_index[gem_handles_packet_index]);
+}
+
+static int validate_indexed_prim_list(VALIDATE_ARGS)
+{
+	struct vc4_bo *ib;
+	uint32_t length = get_unaligned_32(untrusted + 1);
+	uint32_t offset = get_unaligned_32(untrusted + 5);
+	uint32_t max_index = get_unaligned_32(untrusted + 9);
+	uint32_t index_size = (*(uint8_t *)(untrusted + 0) >> 4) ? 2 : 1;
+	struct vc4_shader_state *shader_state;
+
+	/* Check overflow condition */
+	if (exec->shader_state_count == 0) {
+		kprintf("vc4: shader state must precede primitives\n");
+		return -E_INVAL;
+	}
+	shader_state = &exec->shader_state[exec->shader_state_count - 1];
+
+	if (max_index > shader_state->max_index)
+		shader_state->max_index = max_index;
+
+	ib = vc4_use_handle(exec, 0);
+	if (!ib)
+		return -E_INVAL;
+
+	if (offset > ib->size || (ib->size - offset) / index_size < length) {
+		kprintf("vc4: IB access overflow (%d + %d*%d > %d)\n", offset,
+			length, index_size, ib->size);
+		return -E_INVAL;
+	}
+
+	put_unaligned_32(validated + 5, ib->paddr + offset);
+
+	return 0;
+}
+
+static int validate_nv_shader_state(VALIDATE_ARGS)
+{
+	uint32_t i = exec->shader_state_count++;
+
+	if (i >= exec->shader_state_size) {
+		kprintf("vc4: More requests for shader states than declared\n");
+		return -E_INVAL;
+	}
+
+	exec->shader_state[i].addr = get_unaligned_32(untrusted);
+	exec->shader_state[i].max_index = 0;
+
+	put_unaligned_32(validated,
+			 (exec->shader_rec_p + exec->shader_state[i].addr));
+
+	exec->shader_rec_p += 16;
+
+	return 0;
+}
 
 static int validate_tile_binning_config(VALIDATE_ARGS)
 {
@@ -40,6 +112,12 @@ static int validate_tile_binning_config(VALIDATE_ARGS)
 	return 0;
 }
 
+static int validate_gem_handles(VALIDATE_ARGS)
+{
+	memcpy(exec->bo_index, untrusted, sizeof(exec->bo_index));
+	return 0;
+}
+
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof((arr)[0]))
 
 #define VC4_DEFINE_PACKET(packet, func)                                        \
@@ -61,7 +139,7 @@ static const struct cmd_info {
 			  NULL), // validate_increment_semaphore
 
 	VC4_DEFINE_PACKET(VC4_PACKET_GL_INDEXED_PRIMITIVE,
-			  NULL), // validate_indexed_prim_list
+			  validate_indexed_prim_list),
 	VC4_DEFINE_PACKET(VC4_PACKET_GL_ARRAY_PRIMITIVE,
 			  NULL), // validate_gl_array_primitive
 
@@ -69,8 +147,7 @@ static const struct cmd_info {
 
 	VC4_DEFINE_PACKET(VC4_PACKET_GL_SHADER_STATE,
 			  NULL), // validate_gl_shader_state
-	VC4_DEFINE_PACKET(VC4_PACKET_NV_SHADER_STATE,
-			  NULL), // validate_nv_shader_state
+	VC4_DEFINE_PACKET(VC4_PACKET_NV_SHADER_STATE, validate_nv_shader_state),
 
 	VC4_DEFINE_PACKET(VC4_PACKET_CONFIGURATION_BITS, NULL),
 	VC4_DEFINE_PACKET(VC4_PACKET_FLAT_SHADE_FLAGS, NULL),
@@ -89,7 +166,7 @@ static const struct cmd_info {
 	VC4_DEFINE_PACKET(VC4_PACKET_TILE_BINNING_MODE_CONFIG,
 			  validate_tile_binning_config),
 
-	VC4_DEFINE_PACKET(VC4_PACKET_GEM_HANDLES, NULL), // validate_gem_handles
+	VC4_DEFINE_PACKET(VC4_PACKET_GEM_HANDLES, validate_gem_handles),
 };
 
 int vc4_validate_bin_cl(struct device *dev, void *validated, void *unvalidated,
@@ -126,8 +203,8 @@ int vc4_validate_bin_cl(struct device *dev, void *validated, void *unvalidated,
 			return -E_INVAL;
 		}
 
-		// if (cmd != VC4_PACKET_GEM_HANDLES)
-		// 	memcpy(dst_pkt, src_pkt, info->len);
+		if (cmd != VC4_PACKET_GEM_HANDLES)
+			memcpy(dst_pkt, src_pkt, info->len);
 
 		if (info->func &&
 		    info->func(dev, exec, dst_pkt + 1, src_pkt + 1)) {
@@ -151,12 +228,81 @@ int vc4_validate_bin_cl(struct device *dev, void *validated, void *unvalidated,
 	return 0;
 }
 
+static int validate_nv_shader_rec(struct device *dev,
+				  struct vc4_exec_info *exec,
+				  struct vc4_shader_state *state)
+{
+	uint32_t *src_handles;
+	void *pkt_u, *pkt_v;
+	uint32_t shader_reloc_count = 1;
+	struct vc4_bo *bo[shader_reloc_count];
+	uint32_t nr_relocs = 3, packet_size = 16;
+	int i;
+
+	nr_relocs = shader_reloc_count + 2;
+	if (nr_relocs * 4 > exec->shader_rec_size) {
+		kprintf("vc4: overflowed shader recs reading %d handles "
+			"from %d bytes left\n",
+			nr_relocs, exec->shader_rec_size);
+		return -E_INVAL;
+	}
+	src_handles = exec->shader_rec_u;
+	exec->shader_rec_u += nr_relocs * 4;
+	exec->shader_rec_size -= nr_relocs * 4;
+
+	if (packet_size > exec->shader_rec_size) {
+		kprintf("vc4: overflowed shader recs copying %db packet "
+			"from %d bytes left\n",
+			packet_size, exec->shader_rec_size);
+		return -E_INVAL;
+	}
+	pkt_u = exec->shader_rec_u;
+	pkt_v = exec->shader_rec_v;
+	memcpy(pkt_v, pkt_u, packet_size);
+	exec->shader_rec_u += packet_size;
+	exec->shader_rec_v += packet_size;
+	exec->shader_rec_size -= packet_size;
+
+	for (i = 0; i < nr_relocs; i++) {
+		bo[i] = vc4_use_bo(exec, src_handles[i]);
+		if (!bo[i])
+			return -E_INVAL;
+	}
+
+	uint8_t stride = *(uint8_t *)(pkt_u + 1);
+	uint32_t fs_offset = get_unaligned_32(pkt_u + 4);
+	uint32_t uniform_offset = get_unaligned_32(pkt_u + 8);
+	uint32_t data_offset = get_unaligned_32(pkt_u + 12);
+	uint32_t max_index;
+
+	put_unaligned_32(pkt_v + 4, bo[0]->paddr + fs_offset);
+	put_unaligned_32(pkt_v + 8, bo[1]->paddr + uniform_offset);
+
+	if (stride != 0) {
+		max_index = (bo[2]->size - data_offset) / stride;
+		if (state->max_index > max_index) {
+			kprintf("vc4: primitives use index %d out of "
+				"supplied %d\n",
+				state->max_index, max_index);
+			return -E_INVAL;
+		}
+	}
+
+	put_unaligned_32(pkt_v + 12, bo[2]->paddr + data_offset);
+
+	return 0;
+}
+
 int vc4_validate_shader_recs(struct device *dev, struct vc4_exec_info *exec)
 {
 	uint32_t i;
 	int ret = 0;
 
-	// TODO
+	for (i = 0; i < exec->shader_state_count; i++) {
+		ret = validate_nv_shader_rec(dev, exec, &exec->shader_state[i]);
+		if (ret)
+			return ret;
+	}
 
 	return ret;
 }

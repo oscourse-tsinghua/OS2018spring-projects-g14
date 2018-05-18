@@ -1,3 +1,4 @@
+#include <proc.h>
 #include <error.h>
 #include <assert.h>
 
@@ -88,22 +89,130 @@ static void vc4_queue_submit(struct device *dev, struct vc4_exec_info *exec)
 	vc4_submit_next_render_job(dev, exec);
 }
 
+/**
+ * vc4_cl_lookup_bos() - Sets up exec->bo[] with the GEM objects
+ * referenced by the job.
+ * @dev: device
+ * @exec: V3D job being set up
+ *
+ * The command validator needs to reference BOs by their index within
+ * the submitted job's BO list.  This does the validation of the job's
+ * BO list and reference counting for the lifetime of the job.
+ *
+ * Note that this function doesn't need to unreference the BOs on
+ * failure, because that will happen at vc4_complete_exec() time.
+ */
+static int vc4_cl_lookup_bos(struct device *dev, struct vc4_exec_info *exec)
+{
+	struct drm_vc4_submit_cl *args = exec->args;
+	struct mm_struct *mm = current->mm;
+	uint32_t *handles;
+	int ret = 0;
+	int i;
+
+	exec->bo_count = args->bo_handle_count;
+
+	if (!exec->bo_count) {
+		/* See comment on bo_index for why we have to check
+		 * this.
+		 */
+		kprintf("vc4: Rendering requires BOs to validate\n");
+		return -E_INVAL;
+	}
+
+	exec->bo = (struct vc4_bo **)kmalloc(exec->bo_count *
+					     sizeof(struct vc4_bo *));
+	if (!exec->bo) {
+		kprintf("vc4: Failed to allocate validated BO pointers\n");
+		return -E_NOMEM;
+	}
+
+	handles = (uint32_t *)kmalloc(exec->bo_count, sizeof(uint32_t));
+	if (!handles) {
+		ret = -E_NOMEM;
+		kprintf("vc4: Failed to allocate incoming GEM handles\n");
+		goto fail;
+	}
+
+	memcpy(handles, (void *)(uint32_t)args->bo_handles,
+	       exec->bo_count * sizeof(uint32_t));
+	/*
+	if (!copy_from_user(mm, handles, args->bo_handles,
+			   exec->bo_count * sizeof(uint32_t), 0)) {
+		ret = -E_FAULT;
+		kprintf("vc4: Failed to copy in GEM handles\n");
+		goto fail;
+	}
+	*/
+
+	for (i = 0; i < exec->bo_count; i++) {
+		struct vc4_bo *bo = vc4_lookup_bo(dev, handles[i]);
+		if (!bo) {
+			kprintf("vc4: Failed to look up GEM BO %d: %d\n", i,
+				handles[i]);
+			ret = -E_INVAL;
+			goto fail;
+		}
+		exec->bo[i] = bo;
+	}
+
+fail:
+	kfree(handles);
+	return ret;
+}
+
 static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 {
 	struct drm_vc4_submit_cl *args = exec->args;
-	void *temp = (void *)(uint32_t)args->bin_cl;
+	void *temp = NULL;
 	void *bin;
 	int ret = 0;
 	uint32_t bin_offset = 0;
 	uint32_t shader_rec_offset =
 		ROUNDUP(bin_offset + args->bin_cl_size, 16);
+	uint32_t uniforms_offset = shader_rec_offset + args->shader_rec_size;
+	uint32_t exec_size = uniforms_offset + args->uniforms_size;
+	uint32_t temp_size = exec_size + (sizeof(struct vc4_shader_state) *
+					  args->shader_rec_count);
 
-	// TODO
+	if (shader_rec_offset < args->bin_cl_size ||
+	    uniforms_offset < shader_rec_offset ||
+	    exec_size < uniforms_offset ||
+	    args->shader_rec_count >=
+		    ((~0U) / sizeof(struct vc4_shader_state)) ||
+	    temp_size < exec_size) {
+		kprintf("vc4: overflow in exec arguments\n");
+		ret = -E_INVAL;
+		goto fail;
+	}
 
+	temp = (void *)kmalloc(temp_size);
+	if (!temp) {
+		kprintf("vc4: Failed to allocate storage for copying "
+			"in bin/render CLs.\n");
+		ret = -E_NOMEM;
+		goto fail;
+	}
 	bin = temp + bin_offset;
+	exec->shader_rec_u = temp + shader_rec_offset;
+	exec->shader_state = temp + exec_size;
+	exec->shader_state_size = args->shader_rec_count;
+
+	memcpy(bin, (void *)(uint32_t)args->bin_cl, args->bin_cl_size);
+	memcpy(exec->shader_rec_u, (void *)(uint32_t)args->shader_rec,
+	       args->shader_rec_size);
+
+	void *exec_bo_vaddr = (void *)(uint32_t)args->bin_cl;
+
 	exec->ct0ca = args->bin_cl;
 
-	ret = vc4_validate_bin_cl(dev, bin, bin, exec);
+	exec->bin_u = bin;
+
+	exec->shader_rec_v = (void *)(uint32_t)args->shader_rec;
+	exec->shader_rec_p = args->shader_rec;
+	exec->shader_rec_size = args->shader_rec_size;
+
+	ret = vc4_validate_bin_cl(dev, exec_bo_vaddr + bin_offset, bin, exec);
 	if (ret)
 		goto fail;
 
@@ -114,6 +223,7 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	return 0;
 
 fail:
+	kfree(temp);
 	return ret;
 }
 
@@ -145,7 +255,13 @@ int vc4_submit_cl_ioctl(struct device *dev, void *data)
 		return -E_NOMEM;
 	}
 
+	memset(exec, 0, sizeof(struct vc4_exec_info));
 	exec->args = args;
+
+	ret = vc4_cl_lookup_bos(dev, exec);
+	if (ret)
+		goto fail;
+
 	if (exec->args->bin_cl_size != 0) {
 		ret = vc4_get_bcl(dev, exec);
 		if (ret)
