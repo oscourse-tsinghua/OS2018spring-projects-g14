@@ -134,7 +134,7 @@ static int vc4_cl_lookup_bos(struct device *dev, struct vc4_exec_info *exec)
 		goto fail;
 	}
 
-	memcpy(handles, (void *)(uint32_t)args->bo_handles,
+	memcpy(handles, (void *)(uintptr_t)args->bo_handles,
 	       exec->bo_count * sizeof(uint32_t));
 	/*
 	if (!copy_from_user(mm, handles, args->bo_handles,
@@ -174,6 +174,7 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	uint32_t exec_size = uniforms_offset + args->uniforms_size;
 	uint32_t temp_size = exec_size + (sizeof(struct vc4_shader_state) *
 					  args->shader_rec_count);
+	struct vc4_bo *bo;
 
 	if (shader_rec_offset < args->bin_cl_size ||
 	    uniforms_offset < shader_rec_offset ||
@@ -198,21 +199,28 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	exec->shader_state = temp + exec_size;
 	exec->shader_state_size = args->shader_rec_count;
 
-	memcpy(bin, (void *)(uint32_t)args->bin_cl, args->bin_cl_size);
-	memcpy(exec->shader_rec_u, (void *)(uint32_t)args->shader_rec,
+	memcpy(bin, (void *)(uintptr_t)args->bin_cl, args->bin_cl_size);
+	memcpy(exec->shader_rec_u, (void *)(uintptr_t)args->shader_rec,
 	       args->shader_rec_size);
 
-	void *exec_bo_vaddr = (void *)(uint32_t)args->bin_cl;
+	bo = vc4_bo_create(dev, exec_size, 0x10);
+	if (bo == NULL) {
+		kprintf("vc4: Couldn't allocate BO for binning\n");
+		ret = -E_NOMEM;
+		goto fail;
+	}
+	exec->exec_bo = bo;
 
-	exec->ct0ca = args->bin_cl;
+	exec->ct0ca = exec->exec_bo->paddr + bin_offset;
 
 	exec->bin_u = bin;
 
-	exec->shader_rec_v = (void *)(uint32_t)args->shader_rec;
-	exec->shader_rec_p = args->shader_rec;
+	exec->shader_rec_v = exec->exec_bo->vaddr + shader_rec_offset;
+	exec->shader_rec_p = exec->exec_bo->paddr + shader_rec_offset;
 	exec->shader_rec_size = args->shader_rec_size;
 
-	ret = vc4_validate_bin_cl(dev, exec_bo_vaddr + bin_offset, bin, exec);
+	ret = vc4_validate_bin_cl(dev, exec->exec_bo->vaddr + bin_offset, bin,
+				  exec);
 	if (ret)
 		goto fail;
 

@@ -9,24 +9,24 @@ struct vc4_bo;
 struct vc4_context;
 
 struct vc4_cl {
-	uint32_t paddr;
-	void *vaddr;
+	void *base;
 	void *next;
 	void *reloc_next;
 	size_t size;
 };
 
-void vc4_init_cl(struct vc4_cl *cl, uint32_t paddr, void *vaddr, size_t size);
+void vc4_init_cl(struct vc4_cl *cl);
 void vc4_reset_cl(struct vc4_cl *cl);
 void vc4_dump_cl(void *cl, size_t size, size_t cols, const char *name);
 uint32_t vc4_gem_hindex(struct vc4_context *vc4, struct vc4_bo *bo);
+void cl_ensure_space(struct vc4_cl *cl, uint32_t size);
 
 struct __attribute__((__packed__)) unaligned_16 { uint16_t x; };
 struct __attribute__((__packed__)) unaligned_32 { uint32_t x; };
 
 static inline uint32_t cl_offset(struct vc4_cl *cl)
 {
-	return (char *)cl->next - (char *)cl->vaddr;
+	return (char *)cl->next - (char *)cl->base;
 }
 
 static inline void cl_advance(struct vc4_cl *cl, uint32_t n)

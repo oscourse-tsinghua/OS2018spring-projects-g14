@@ -13,23 +13,17 @@ struct shaded_vertex {
 	float r, g, b;
 };
 
-static void vc4_emit_state(struct vc4_context *vc4, uint32_t width,
-			   uint32_t height)
+static void vc4_get_draw_cl_space(struct vc4_context *vc4, int vert_count)
 {
-	cl_u8(&vc4->bcl, VC4_PACKET_CLIP_WINDOW);
-	cl_u16(&vc4->bcl, 0);
-	cl_u16(&vc4->bcl, 0);
-	cl_u16(&vc4->bcl, width); // width
-	cl_u16(&vc4->bcl, height); // height
+	int num_draws = 1;
 
-	cl_u8(&vc4->bcl, VC4_PACKET_CONFIGURATION_BITS);
-	cl_u8(&vc4->bcl, 0x03); // enable both foward and back facing polygons
-	cl_u8(&vc4->bcl, 0x00); // depth testing disabled
-	cl_u8(&vc4->bcl, 0x02); // enable early depth write
+	cl_ensure_space(&vc4->bcl, 256 + (VC4_PACKET_GL_INDEXED_PRIMITIVE_SIZE +
+					  VC4_PACKET_NV_SHADER_STATE_SIZE) *
+						   num_draws);
 
-	cl_u8(&vc4->bcl, VC4_PACKET_VIEWPORT_OFFSET);
-	cl_u16(&vc4->bcl, 0);
-	cl_u16(&vc4->bcl, 0);
+	cl_ensure_space(&vc4->shader_rec, 16 * num_draws);
+
+	cl_ensure_space(&vc4->bo_handles, 20 * sizeof(uint32_t));
 }
 
 static size_t emit_triangle(void *vaddr, float r, float g, float b, float x1,
@@ -47,8 +41,7 @@ static size_t emit_triangle(void *vaddr, float r, float g, float b, float x1,
 	return sizeof(verts);
 }
 
-static struct vc4_bo *get_vbo(struct vc4_context *vc4, uint32_t width,
-			      uint32_t height)
+static struct vc4_bo *get_vbo(struct vc4_context *vc4)
 {
 	struct vc4_bo *bo;
 	void *map;
@@ -58,7 +51,8 @@ static struct vc4_bo *get_vbo(struct vc4_context *vc4, uint32_t width,
 	float sqrt3 = 1.7320508075688772f;
 	float sqrt6 = 2.449489742783178;
 	int size = 600;
-	uint32_t center_x = width / 2, center_y = height / 2;
+	uint32_t center_x = (vc4->draw_max_x + vc4->draw_min_x) / 2;
+	uint32_t center_y = (vc4->draw_max_y + vc4->draw_min_y) / 2;
 	float x0 = center_x - size / 2, y0 = center_y + sqrt3 / 6 * size,
 	      z0 = 1;
 	float x1 = x0 + size / 2, y1 = y0 - sqrt3 / 2 * size, z1 = z0;
@@ -95,38 +89,66 @@ static struct vc4_bo *get_ibo(struct vc4_context *vc4)
 	return bo;
 }
 
-static void vc4_draw_vbo(struct vc4_context *vc4)
+/**
+ * Does the initial bining command list setup for drawing to a given FBO.
+ */
+static void vc4_start_draw(struct vc4_context *vc4)
 {
-	uint32_t width = vc4->framebuffer->var.xres;
-	uint32_t height = vc4->framebuffer->var.yres;
-	uint32_t tilew = (width + 63) / 64; // Tiles across
-	uint32_t tileh = (height + 63) / 64; // Tiles down
+	if (vc4->needs_flush)
+		return;
 
-	struct vc4_bo *fs_uniform = vc4_bo_alloc(0x1000, 1);
-	vc4_bo_map(fs_uniform);
+	vc4_get_draw_cl_space(vc4, 0);
 
-	struct vc4_bo *ibo = get_ibo(vc4);
-	struct vc4_bo *vbo = get_vbo(vc4, width, height);
-
-	vc4->needs_flush = 1;
-
-	//   Tile state data is 48 bytes per tile, I think it can be thrown away
-	//   as soon as binning is finished.
 	cl_u8(&vc4->bcl, VC4_PACKET_TILE_BINNING_MODE_CONFIG);
 	cl_u32(&vc4->bcl, 0);
 	cl_u32(&vc4->bcl, 0);
 	cl_u32(&vc4->bcl, 0);
-	cl_u8(&vc4->bcl, tilew);
-	cl_u8(&vc4->bcl, tileh);
+	cl_u8(&vc4->bcl, vc4->draw_tiles_x);
+	cl_u8(&vc4->bcl, vc4->draw_tiles_y);
 	cl_u8(&vc4->bcl, VC4_BIN_CONFIG_AUTO_INIT_TSDA);
 
+	/* START_TILE_BINNING resets the statechange counters in the hardware,
+	 * which are what is used when a primitive is binned to a tile to
+	 * figure out what new state packets need to be written to that tile's
+	 * command list.
+	 */
 	cl_u8(&vc4->bcl, VC4_PACKET_START_TILE_BINNING);
 
+	/* Reset the current compressed primitives format.  This gets modified
+	 * by VC4_PACKET_GL_INDEXED_PRIMITIVE and
+	 * VC4_PACKET_GL_ARRAY_PRIMITIVE, so it needs to be reset at the start
+	 * of every tile.
+	 */
 	cl_u8(&vc4->bcl, VC4_PACKET_PRIMITIVE_LIST_FORMAT);
-	cl_u8(&vc4->bcl, VC4_PRIMITIVE_LIST_FORMAT_32_XY |
+	cl_u8(&vc4->bcl, VC4_PRIMITIVE_LIST_FORMAT_16_INDEX |
 				 VC4_PRIMITIVE_LIST_FORMAT_TYPE_TRIANGLES);
 
-	vc4_emit_state(vc4, width, height);
+	vc4->needs_flush = 1;
+	vc4->draw_width = vc4->framebuffer->var.xres;
+	vc4->draw_height = vc4->framebuffer->var.yres;
+}
+
+static void vc4_init_context_fbo(struct vc4_context *vc4)
+{
+	vc4->tile_width = 64;
+	vc4->tile_height = 64;
+
+	vc4->draw_tiles_x =
+		ROUNDUP_DIV(vc4->framebuffer->var.xres, vc4->tile_width);
+	vc4->draw_tiles_y =
+		ROUNDUP_DIV(vc4->framebuffer->var.yres, vc4->tile_height);
+}
+
+static void vc4_draw_vbo(struct vc4_context *vc4)
+{
+	vc4_init_context_fbo(vc4);
+
+	vc4_start_draw(vc4);
+
+	vc4_emit_state(vc4);
+
+	struct vc4_bo *ibo = get_ibo(vc4);
+	struct vc4_bo *vbo = get_vbo(vc4);
 
 	cl_u8(&vc4->bcl, VC4_PACKET_NV_SHADER_STATE);
 	cl_u32(&vc4->bcl, 0); // offset into shader_rec
@@ -148,7 +170,7 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	cl_u8(&vc4->shader_rec, 0xcc); // num uniforms (not used)
 	cl_u8(&vc4->shader_rec, 3); // num varyings
 	cl_reloc(&vc4->shader_rec, vc4, vc4->prog.fs, 0);
-	cl_reloc(&vc4->shader_rec, vc4, fs_uniform, 0);
+	cl_reloc(&vc4->shader_rec, vc4, vc4->uniforms, 0);
 	cl_reloc(&vc4->shader_rec, vc4, vbo, 0);
 
 	vc4->shader_rec_count++;

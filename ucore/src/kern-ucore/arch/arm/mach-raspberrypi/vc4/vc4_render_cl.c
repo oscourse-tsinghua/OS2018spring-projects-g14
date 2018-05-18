@@ -77,11 +77,14 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 
 	size += xtiles * ytiles * loop_body_size;
 
-	struct vc4_bo *bo = vc4_bo_create(dev, size, 1);
-	if (bo == NULL) {
+	struct vc4_bo *rcl_bo = vc4_bo_create(dev, size, 1);
+	if (rcl_bo == NULL) {
 		return -E_NOMEM;
 	}
-	vc4_init_cl(setup, bo->paddr, bo->vaddr, size);
+	vc4_init_cl(setup);
+	setup->base = rcl_bo->vaddr;
+	setup->next = setup->base;
+	setup->size = size;
 
 	/* The tile buffer gets cleared when the previous tile is stored.  If
 	 * the clear values changed between frames, then the tile buffer has
@@ -118,8 +121,8 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 	}
 
 	assert(cl_offset(setup) == size);
-	exec->ct1ca = setup->paddr;
-	exec->ct1ea = setup->paddr + cl_offset(setup);
+	exec->ct1ca = rcl_bo->paddr;
+	exec->ct1ea = rcl_bo->paddr + cl_offset(setup);
 
 	return 0;
 }

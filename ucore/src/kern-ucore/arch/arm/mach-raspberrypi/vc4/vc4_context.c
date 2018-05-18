@@ -1,6 +1,5 @@
 #include <assert.h>
 
-#include "vc4_drv.h"
 #include "vc4_drm.h"
 #include "vc4_packet.h"
 #include "vc4_context.h"
@@ -36,6 +35,7 @@ void vc4_flush(struct vc4_context *vc4)
 	memset(&submit, 0, sizeof(submit));
 
 	if (cl_offset(&vc4->bcl) > 0) {
+		cl_ensure_space(&vc4->bcl, 8);
 		cl_u8(&vc4->bcl, VC4_PACKET_INCREMENT_SEMAPHORE);
 		cl_u8(&vc4->bcl, VC4_PACKET_FLUSH);
 	}
@@ -48,25 +48,20 @@ void vc4_flush(struct vc4_context *vc4)
 		VC4_SET_FIELD(VC4_TILING_FORMAT_LINEAR,
 			      VC4_RENDER_CONFIG_MEMORY_FORMAT);
 
-	submit.bin_cl = vc4->bcl.paddr;
+	submit.bin_cl = (uintptr_t)vc4->bcl.base;
 	submit.bin_cl_size = cl_offset(&vc4->bcl);
-	submit.shader_rec = vc4->shader_rec.paddr;
+	submit.shader_rec = (uintptr_t)vc4->shader_rec.base;
 	submit.shader_rec_size = cl_offset(&vc4->shader_rec);
 	submit.shader_rec_count = vc4->shader_rec_count;
-	submit.bo_handles = (uint32_t)vc4->bo_handles.vaddr;
+	submit.bo_handles = (uintptr_t)vc4->bo_handles.base;
 	submit.bo_handle_count = cl_offset(&vc4->bo_handles) / 4;
 
-	const uint32_t tile_width = 64, tile_height = 64;
-	uint32_t draw_width = vc4->framebuffer->var.xres;
-	uint32_t draw_height = vc4->framebuffer->var.yres;
-	uint32_t draw_min_x = 0, draw_max_x = draw_width;
-	uint32_t draw_min_y = 0, draw_max_y = draw_height;
-	submit.min_x_tile = draw_min_x / tile_width;
-	submit.min_y_tile = draw_min_y / tile_height;
-	submit.max_x_tile = (draw_max_x - 1) / tile_width;
-	submit.max_y_tile = (draw_max_y - 1) / tile_height;
-	submit.width = draw_width;
-	submit.height = draw_height;
+	submit.min_x_tile = vc4->draw_min_x / vc4->tile_width;
+	submit.min_y_tile = vc4->draw_min_y / vc4->tile_height;
+	submit.max_x_tile = (vc4->draw_max_x - 1) / vc4->tile_width;
+	submit.max_y_tile = (vc4->draw_max_y - 1) / vc4->tile_height;
+	submit.width = vc4->draw_width;
+	submit.height = vc4->draw_height;
 
 	uint32_t cleared = 1;
 	uint32_t clear_color = 0x282c34;
@@ -114,15 +109,9 @@ struct vc4_context *vc4_context_create(struct device *dev)
 
 	vc4_program_init(vc4);
 
-	struct vc4_bo *bo = vc4_bo_create(dev, 0x8000, 0x1000);
-
-	vc4_init_cl(&vc4->bcl, bo->paddr, bo->vaddr, 0);
-	vc4_init_cl(&vc4->shader_rec, bo->paddr + BUFFER_SHADER_OFFSET,
-		    bo->vaddr + BUFFER_SHADER_OFFSET, 0);
-
-	uint32_t bo_handles_base = (uint32_t)kmalloc(0x1000);
-	vc4_init_cl(&vc4->bo_handles, bo_handles_base, (void *)bo_handles_base,
-		    0);
+	vc4_init_cl(&vc4->bcl);
+	vc4_init_cl(&vc4->shader_rec);
+	vc4_init_cl(&vc4->bo_handles);
 
 	return vc4;
 }

@@ -25,4 +25,5 @@ static struct vc4_bo *vc4_create_fs()
 void vc4_program_init(struct vc4_context *vc4)
 {
 	vc4->prog.fs = vc4_create_fs();
+	vc4->uniforms = vc4_bo_alloc(0x1000, 1);
 }

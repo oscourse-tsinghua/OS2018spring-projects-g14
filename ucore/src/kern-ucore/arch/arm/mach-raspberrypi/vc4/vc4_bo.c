@@ -106,7 +106,7 @@ int vc4_mmap_bo_ioctl(struct device *dev, void *data)
 		return -E_INVAL;
 	}
 
-	args->offset = (uint32_t)bo->vaddr;
+	args->offset = (uintptr_t)bo->vaddr;
 
 	return 0;
 }
