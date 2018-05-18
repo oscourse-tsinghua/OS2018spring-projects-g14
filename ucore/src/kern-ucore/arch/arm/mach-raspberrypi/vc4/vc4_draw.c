@@ -124,8 +124,8 @@ static void vc4_start_draw(struct vc4_context *vc4)
 				 VC4_PRIMITIVE_LIST_FORMAT_TYPE_TRIANGLES);
 
 	vc4->needs_flush = 1;
-	vc4->draw_width = vc4->framebuffer->var.xres;
-	vc4->draw_height = vc4->framebuffer->var.yres;
+	vc4->draw_width = vc4->framebuffer.width;
+	vc4->draw_height = vc4->framebuffer.height;
 }
 
 static void vc4_init_context_fbo(struct vc4_context *vc4)
@@ -134,9 +134,9 @@ static void vc4_init_context_fbo(struct vc4_context *vc4)
 	vc4->tile_height = 64;
 
 	vc4->draw_tiles_x =
-		ROUNDUP_DIV(vc4->framebuffer->var.xres, vc4->tile_width);
+		ROUNDUP_DIV(vc4->framebuffer.width, vc4->tile_width);
 	vc4->draw_tiles_y =
-		ROUNDUP_DIV(vc4->framebuffer->var.yres, vc4->tile_height);
+		ROUNDUP_DIV(vc4->framebuffer.height, vc4->tile_height);
 }
 
 static void vc4_draw_vbo(struct vc4_context *vc4)
@@ -178,9 +178,27 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 	vc4_flush(vc4);
 }
 
-void vc4_hello_triangle(struct device *dev)
+static void vc4_clear(struct vc4_context *vc4, uint32_t color)
 {
-	struct vc4_context *vc4 = vc4_context_create(dev);
+	vc4->clear_color[0] = vc4->clear_color[1] = color;
+	vc4->clear_depth = 0;
+	vc4->clear_stencil = 0;
+	vc4->cleared |= 1;
 
+	vc4_init_context_fbo(vc4);
+
+	vc4->draw_min_x = 0;
+	vc4->draw_min_y = 0;
+	vc4->draw_max_x = vc4->framebuffer.width;
+	vc4->draw_max_y = vc4->framebuffer.height;
+
+	vc4_start_draw(vc4);
+}
+
+void vc4_hello_triangle(void)
+{
+	struct vc4_context *vc4 = vc4_context_create();
+
+	vc4_clear(vc4, 0x282c34);
 	vc4_draw_vbo(vc4);
 }

@@ -105,11 +105,11 @@ static int vc4_ioctl(struct device *dev, int op, void *data)
 		return -E_NODEV;
 
 	int ret = 0;
-	extern void vc4_hello_triangle(struct device *dev);
+	extern void vc4_hello_triangle(void);
 
 	switch (op) {
 	case DRM_IOCTL_VC4_SUBMIT_CL:
-		vc4_hello_triangle(dev);
+		vc4_hello_triangle();
 		break;
 	default:
 		ret = -E_INVAL;

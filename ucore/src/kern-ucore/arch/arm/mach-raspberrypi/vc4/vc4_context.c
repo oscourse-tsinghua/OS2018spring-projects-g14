@@ -1,24 +1,24 @@
+#include <fb.h>
 #include <assert.h>
 
 #include "vc4_drm.h"
 #include "vc4_packet.h"
 #include "vc4_context.h"
+#include "bcm2708_fb.h"
 
 static void dump_fbo(struct vc4_context *vc4)
 {
-	struct fb_info *fb = vc4->framebuffer;
-	uint32_t width = fb->var.xres;
-	uint32_t height = fb->var.yres;
-
-	uint32_t center_x = width / 2;
-	uint32_t center_y = height / 2;
+	struct vc4_framebuffer_state *fb = &vc4->framebuffer;
+	uint32_t center_x = fb->width / 2;
+	uint32_t center_y = fb->height / 2;
 
 	int x, y;
 	for (y = -6; y < 6; y++) {
 		for (x = -6; x < 6; x++) {
-			uint32_t bytes_per_pixel = fb->var.bits_per_pixel >> 3;
-			uint32_t addr = (y + center_y) * fb->fix.line_length +
-					(x + center_x) * bytes_per_pixel;
+			uint32_t bytes_per_pixel = fb->bits_per_pixel >> 3;
+			uint32_t addr =
+				(y + center_y) * bytes_per_pixel * fb->width +
+				(x + center_x) * bytes_per_pixel;
 			char *ptr = fb->screen_base + addr;
 			int k;
 			for (k = bytes_per_pixel - 1; k >= 0; k--)
@@ -27,6 +27,17 @@ static void dump_fbo(struct vc4_context *vc4)
 		}
 		kprintf("\n");
 	}
+}
+
+static void vc4_fbo_init(struct vc4_context *vc4)
+{
+	struct fb_info *fb = get_fb_info();
+	struct fb_var_screeninfo *var = &fb->var;
+
+	vc4->framebuffer.width = var->xres;
+	vc4->framebuffer.height = var->yres;
+	vc4->framebuffer.bits_per_pixel = var->bits_per_pixel;
+	vc4->framebuffer.screen_base = fb->screen_base;
 }
 
 void vc4_flush(struct vc4_context *vc4)
@@ -41,7 +52,7 @@ void vc4_flush(struct vc4_context *vc4)
 	}
 
 	submit.color_write.bits =
-		VC4_SET_FIELD(vc4->framebuffer->var.bits_per_pixel == 16 ?
+		VC4_SET_FIELD(vc4->framebuffer.bits_per_pixel == 16 ?
 				      VC4_RENDER_CONFIG_FORMAT_BGR565 :
 				      VC4_RENDER_CONFIG_FORMAT_RGBA8888,
 			      VC4_RENDER_CONFIG_FORMAT) |
@@ -56,6 +67,7 @@ void vc4_flush(struct vc4_context *vc4)
 	submit.bo_handles = (uintptr_t)vc4->bo_handles.base;
 	submit.bo_handle_count = cl_offset(&vc4->bo_handles) / 4;
 
+	assert(vc4->draw_min_x != ~0 && vc4->draw_min_y != ~0);
 	submit.min_x_tile = vc4->draw_min_x / vc4->tile_width;
 	submit.min_y_tile = vc4->draw_min_y / vc4->tile_height;
 	submit.max_x_tile = (vc4->draw_max_x - 1) / vc4->tile_width;
@@ -63,14 +75,12 @@ void vc4_flush(struct vc4_context *vc4)
 	submit.width = vc4->draw_width;
 	submit.height = vc4->draw_height;
 
-	uint32_t cleared = 1;
-	uint32_t clear_color = 0x282c34;
-	if (cleared) {
+	if (vc4->cleared) {
 		submit.flags |= VC4_SUBMIT_CL_USE_CLEAR_COLOR;
-		submit.clear_color[0] = clear_color;
-		submit.clear_color[1] = clear_color;
-		submit.clear_z = 0;
-		submit.clear_s = 0;
+		submit.clear_color[0] = vc4->clear_color[0];
+		submit.clear_color[1] = vc4->clear_color[1];
+		submit.clear_z = vc4->clear_depth;
+		submit.clear_s = vc4->clear_stencil;
 	}
 
 	// vc4_dump_cl(vc4->bcl.vaddr, cl_offset(&vc4->bcl), 8, "bcl");
@@ -94,7 +104,7 @@ void vc4_flush(struct vc4_context *vc4)
 	dump_fbo(vc4);
 }
 
-struct vc4_context *vc4_context_create(struct device *dev)
+struct vc4_context *vc4_context_create(void)
 {
 #define BUFFER_SHADER_OFFSET 0x80
 
@@ -105,13 +115,18 @@ struct vc4_context *vc4_context_create(struct device *dev)
 		return NULL;
 
 	memset(vc4, 0, sizeof(struct vc4_context));
-	vc4->framebuffer = to_vc4_dev(dev)->fb;
 
+	vc4_fbo_init(vc4);
 	vc4_program_init(vc4);
 
 	vc4_init_cl(&vc4->bcl);
 	vc4_init_cl(&vc4->shader_rec);
 	vc4_init_cl(&vc4->bo_handles);
+
+	vc4->draw_min_x = ~0;
+	vc4->draw_min_y = ~0;
+	vc4->draw_max_x = 0;
+	vc4->draw_max_y = 0;
 
 	return vc4;
 }

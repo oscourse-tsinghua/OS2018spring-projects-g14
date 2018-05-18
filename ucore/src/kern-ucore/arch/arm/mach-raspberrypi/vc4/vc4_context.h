@@ -5,10 +5,15 @@
 
 #include "vc4_cl.h"
 #include "vc4_bufmgr.h"
-#include "bcm2708_fb.h"
 
 struct vc4_program_stateobj {
 	struct vc4_bo *vs, *fs;
+};
+
+struct vc4_framebuffer_state {
+	uint32_t width, height;
+	uint32_t bits_per_pixel;
+	void *screen_base;
 };
 
 struct vc4_context {
@@ -41,6 +46,18 @@ struct vc4_context {
 	uint32_t tile_width; /** @< Width of a tile. */
 	uint32_t tile_height; /** @< Height of a tile. */
 
+	/* Bitmask of PIPE_CLEAR_* of buffers that were cleared before the
+	 * first rendering.
+	 */
+	uint32_t cleared;
+	/* Bitmask of PIPE_CLEAR_* of buffers that have been rendered to
+	 * (either clears or draws).
+	 */
+	uint32_t resolve;
+	uint32_t clear_color[2];
+	uint32_t clear_depth; /**< 24-bit unorm depth */
+	uint8_t clear_stencil;
+
 	/**
 	 * Set if some drawing (triangles, blits, or just a glClear()) has
 	 * been done to the FBO, meaning that we need to
@@ -51,10 +68,10 @@ struct vc4_context {
 	struct vc4_program_stateobj prog;
 	struct vc4_bo *uniforms;
 
-	struct fb_info *framebuffer;
+	struct vc4_framebuffer_state framebuffer;
 };
 
-struct vc4_context *vc4_context_create(struct device *dev);
+struct vc4_context *vc4_context_create(void);
 void vc4_program_init(struct vc4_context *vc4);
 void vc4_flush(struct vc4_context *vc4);
 void vc4_emit_state(struct vc4_context *vc4);
