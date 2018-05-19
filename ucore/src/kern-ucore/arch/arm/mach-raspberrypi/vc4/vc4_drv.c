@@ -110,6 +110,13 @@ static int vc4_ioctl(struct device *dev, int op, void *data)
 	switch (op) {
 	case DRM_IOCTL_VC4_SUBMIT_CL:
 		vc4_hello_triangle();
+		// vc4_submit_cl_ioctl(dev, data);
+		break;
+	case DRM_IOCTL_VC4_CREATE_BO:
+		vc4_create_bo_ioctl(dev, data);
+		break;
+	case DRM_IOCTL_VC4_MMAP_BO:
+		vc4_mmap_bo_ioctl(dev, data);
 		break;
 	default:
 		ret = -E_INVAL;
