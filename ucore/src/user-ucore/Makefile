@@ -4,7 +4,7 @@
 
 TARGET_CFLAGS:= 	-I../libs-user-ucore/ -I../libs-user-ucore/common -I../libs-user-ucore/arch/$(ARCH) -nostdinc -nostdlib -fno-builtin
 
-#TARGET_CC_SYSTEM_LIB ?=  -L/opt/FriendlyARM/toolschain/4.4.3/lib/gcc/arm-none-linux-gnueabi/4.4.3/ 
+#TARGET_CC_SYSTEM_LIB ?=  -L/opt/FriendlyARM/toolschain/4.4.3/lib/gcc/arm-none-linux-gnueabi/4.4.3/
 
 USER_OBJ_ROOT := $(OBJPATH_ROOT)/user-ucore
 
@@ -16,6 +16,12 @@ TESTBIN := $(USER_OBJ_ROOT)/testbin
 INITIAL_DIR := _initial
 
 USER_APPLIST:= pwd cat sh ls cp echo link mkdir rename unlink lsmod insmod rmmod mount umount halt
+ifeq ($(UCONFIG_GPU_ENABLE),y)
+USER_APPLIST += gles
+TARGET_CFLAGS += -I$(USER_LIB_SRCDIR)/libgl/include
+USER_LIB += $(USER_LIB_OBJDIR)/libgl/libgl.a
+endif
+
 ifneq ($(UCORE_TEST),)
 USER_TESTLIST := $(basename $(wildcard tests/*.c))
 USER_TESTLIST += $(basename $(wildcard tests/arch/$(ARCH)/*.c))

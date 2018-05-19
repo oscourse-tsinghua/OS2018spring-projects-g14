@@ -1,10 +1,8 @@
 #include <fb.h>
-#include <assert.h>
 
 #include "vc4_drm.h"
 #include "vc4_packet.h"
 #include "vc4_context.h"
-#include "bcm2708_fb.h"
 
 static void dump_fbo(struct vc4_context *vc4)
 {
@@ -31,13 +29,13 @@ static void dump_fbo(struct vc4_context *vc4)
 
 static void vc4_fbo_init(struct vc4_context *vc4)
 {
-	struct fb_info *fb = get_fb_info();
-	struct fb_var_screeninfo *var = &fb->var;
+	// struct fb_info *fb = get_fb_info();
+	struct fb_var_screeninfo *var;// = &fb->var;
 
 	vc4->framebuffer.width = var->xres;
 	vc4->framebuffer.height = var->yres;
 	vc4->framebuffer.bits_per_pixel = var->bits_per_pixel;
-	vc4->framebuffer.screen_base = fb->screen_base;
+	// vc4->framebuffer.screen_base = fb->screen_base;
 }
 
 void vc4_flush(struct vc4_context *vc4)
@@ -67,7 +65,10 @@ void vc4_flush(struct vc4_context *vc4)
 	submit.bo_handles = (uintptr_t)vc4->bo_handles.base;
 	submit.bo_handle_count = cl_offset(&vc4->bo_handles) / 4;
 
-	assert(vc4->draw_min_x != ~0 && vc4->draw_min_y != ~0);
+	if (vc4->draw_min_x == ~0 || vc4->draw_min_y == ~0) {
+		cprintf("vc4: draw_min_x or draw_min_y not set.\n");
+		return;
+	}
 	submit.min_x_tile = vc4->draw_min_x / vc4->tile_width;
 	submit.min_y_tile = vc4->draw_min_y / vc4->tile_height;
 	submit.max_x_tile = (vc4->draw_max_x - 1) / vc4->tile_width;
@@ -89,9 +90,9 @@ void vc4_flush(struct vc4_context *vc4)
 	// vc4_dump_cl(vc4->bo_handles.vaddr, cl_offset(&vc4->bo_handles), 8,
 	// 	    "bo_handles");
 
-	int ret = vc4_submit_cl_ioctl(current_dev, &submit);
+	int ret = vc4_submit_cl_ioctl(NULL, &submit);
 	if (ret) {
-		kprintf("vc4: submit failed: %e.\n", ret);
+		cprintf("vc4: submit failed: %e.\n", ret);
 	}
 
 	vc4_reset_cl(&vc4->bcl);

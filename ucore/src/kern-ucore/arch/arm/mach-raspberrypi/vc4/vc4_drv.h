@@ -9,8 +9,6 @@
 #include "vc4_regs.h"
 #include "bcm2708_fb.h"
 
-struct device *current_dev; // FIXME temporary
-
 struct vc4_dev {
 	struct device *dev;
 
@@ -41,8 +39,6 @@ struct vc4_bo {
 	uint32_t handle;
 	uint32_t paddr;
 	void *vaddr;
-
-	void *map; // user
 };
 
 struct vc4_exec_info {

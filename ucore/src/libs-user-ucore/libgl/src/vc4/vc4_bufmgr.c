@@ -16,7 +16,7 @@ struct vc4_bo *vc4_bo_alloc(size_t size, size_t align)
 	memset(&create, 0, sizeof(create));
 	create.size = size;
 	create.align = align;
-	ret = vc4_create_bo_ioctl(current_dev, &create);
+	ret = vc4_create_bo_ioctl(NULL, &create);
 	if (ret != 0) {
 		kprintf("GLES: alloc bo ioctl failure.\n");
 		kfree(bo);
@@ -44,7 +44,7 @@ void *vc4_bo_map(struct vc4_bo *bo)
 	memset(&map, 0, sizeof(map));
 
 	map.handle = bo->handle;
-	ret = vc4_mmap_bo_ioctl(current_dev, &map);
+	ret = vc4_mmap_bo_ioctl(NULL, &map);
 	if (ret != 0) {
 		kprintf("GLES: map ioctl failure.\n");
 		return NULL;

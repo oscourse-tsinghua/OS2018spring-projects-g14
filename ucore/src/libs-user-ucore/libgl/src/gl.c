@@ -1,7 +1,7 @@
 #include <file.h>
 #include <unistd.h>
 
-#include "gl.h"
+#include <GLES/gl.h>
 
 #define DRM_IOCTL_VC4_SUBMIT_CL                         0x00
 #define DRM_IOCTL_VC4_WAIT_SEQNO                        0x01

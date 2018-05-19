@@ -71,8 +71,6 @@ static int vc4_probe(struct device *dev)
 		goto fail;
 	}
 
-	current_dev = dev;
-
 	kprintf("VideoCore IV GPU initialized.\n");
 
 	goto out;
@@ -105,12 +103,10 @@ static int vc4_ioctl(struct device *dev, int op, void *data)
 		return -E_NODEV;
 
 	int ret = 0;
-	extern void vc4_hello_triangle(void);
 
 	switch (op) {
 	case DRM_IOCTL_VC4_SUBMIT_CL:
-		vc4_hello_triangle();
-		// vc4_submit_cl_ioctl(dev, data);
+		vc4_submit_cl_ioctl(dev, data);
 		break;
 	case DRM_IOCTL_VC4_CREATE_BO:
 		vc4_create_bo_ioctl(dev, data);

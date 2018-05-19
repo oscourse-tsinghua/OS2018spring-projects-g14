@@ -1,5 +1,4 @@
 #include <unistd.h>
-#include <assert.h>
 #include <types.h>
 
 #include "vc4_context.h"
