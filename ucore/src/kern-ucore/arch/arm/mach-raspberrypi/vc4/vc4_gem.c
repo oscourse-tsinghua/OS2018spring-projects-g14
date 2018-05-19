@@ -203,7 +203,7 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	memcpy(exec->shader_rec_u, (void *)(uintptr_t)args->shader_rec,
 	       args->shader_rec_size);
 
-	bo = vc4_bo_create(dev, exec_size, 0x10);
+	bo = vc4_bo_create(dev, exec_size);
 	if (bo == NULL) {
 		kprintf("vc4: Couldn't allocate BO for binning\n");
 		ret = -E_NOMEM;

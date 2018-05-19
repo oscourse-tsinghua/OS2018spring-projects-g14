@@ -113,7 +113,6 @@ struct drm_vc4_submit_cl {
 
 struct drm_vc4_create_bo {
 	__u32 size;
-	__u32 align;
 	/** Returned GEM handle for the BO. */
 	__u32 handle;
 };

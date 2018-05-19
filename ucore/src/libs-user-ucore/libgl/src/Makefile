@@ -6,7 +6,7 @@ LIBGL_OBJ_ROOT := $(ULIB_OBJ_ROOT)/libgl
 LIBGL_A := $(LIBGL_OBJ_ROOT)/libgl.a
 ULIB_SRC_ROOT := ../..
 
-TARGET_CFLAGS += -I../include -I$(ULIB_SRC_ROOT) -I$(ULIB_SRC_ROOT)/common -I$(ULIB_SRC_ROOT)/arch/$(ARCH) -nostdinc -nostdlib -fno-builtin
+TARGET_CFLAGS += -I. -I../include -I$(ULIB_SRC_ROOT) -I$(ULIB_SRC_ROOT)/common -I$(ULIB_SRC_ROOT)/arch/$(ARCH) -nostdinc -nostdlib -fno-builtin
 obj-y += gl.o
 
 include vc4/Makefile
@@ -22,7 +22,7 @@ $(LIBGL_A): $(target-obj)
 $(LIBGL_OBJ_ROOT)/%.o: %.c | $(LIBGL_OBJ_ROOT)
 	$(TARGET_CC) $(TARGET_CFLAGS) -c -o $@ $<
 
-$(LIBGL_OBJ_ROOT)/%.o: %.S | $(ULIB_OBJ_ROOT)
+$(LIBGL_OBJ_ROOT)/%.o: %.S | $(LIBGL_OBJ_ROOT)
 	$(TARGET_CC) -D__ASSEMBLY__ $(TARGET_CFLAGS) -c -o $@ $<
 
 $(LIBGL_OBJ_ROOT):

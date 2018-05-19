@@ -1,4 +1,7 @@
 #include <fb.h>
+#include <error.h>
+#include <unistd.h>
+#include <malloc.h>
 
 #include "vc4_drm.h"
 #include "vc4_packet.h"
@@ -20,26 +23,54 @@ static void dump_fbo(struct vc4_context *vc4)
 			char *ptr = fb->screen_base + addr;
 			int k;
 			for (k = bytes_per_pixel - 1; k >= 0; k--)
-				kprintf("%02x", *(ptr + k));
-			kprintf(" ");
+				cprintf("%02x", *(ptr + k));
+			cprintf(" ");
 		}
-		kprintf("\n");
+		cprintf("\n");
 	}
 }
 
-static void vc4_fbo_init(struct vc4_context *vc4)
+static int vc4_fbo_init(struct vc4_context *vc4)
 {
-	// struct fb_info *fb = get_fb_info();
-	struct fb_var_screeninfo *var;// = &fb->var;
+	struct fb_var_screeninfo var;
+	int fb_fd = open("fb0:", O_RDWR);
+	int ret = 0;
 
-	vc4->framebuffer.width = var->xres;
-	vc4->framebuffer.height = var->yres;
-	vc4->framebuffer.bits_per_pixel = var->bits_per_pixel;
-	// vc4->framebuffer.screen_base = fb->screen_base;
+	if (fb_fd == 0) {
+		return -E_NOENT;
+	}
+
+	if ((ret = ioctl(fb_fd, FBIOGET_VSCREENINFO, &var))) {
+		cprintf("GLES: fb ioctl error\n");
+		goto out;
+	}
+
+	uint32_t size = var.xres * var.yres * var.bits_per_pixel >> 3;
+
+	void *buf = (void *)sys_linux_mmap(0, size, fb_fd, 0);
+	if (buf == NULL) {
+		cprintf("GLES: fb mmap error\n");
+		ret = -E_NOMEM;
+		goto out;
+	}
+
+	vc4->framebuffer.width = var.xres;
+	vc4->framebuffer.height = var.yres;
+	vc4->framebuffer.bits_per_pixel = var.bits_per_pixel;
+	vc4->framebuffer.screen_base = buf;
+
+out:
+	close(fb_fd);
+	return ret;
 }
 
-void vc4_flush(struct vc4_context *vc4)
+void vc4_flush(struct gl_context *ctx)
 {
+	struct vc4_context *vc4 = vc4_context(ctx);
+
+	if (!vc4->needs_flush)
+		return;
+
 	struct drm_vc4_submit_cl submit;
 	memset(&submit, 0, sizeof(submit));
 
@@ -66,7 +97,7 @@ void vc4_flush(struct vc4_context *vc4)
 	submit.bo_handle_count = cl_offset(&vc4->bo_handles) / 4;
 
 	if (vc4->draw_min_x == ~0 || vc4->draw_min_y == ~0) {
-		cprintf("vc4: draw_min_x or draw_min_y not set.\n");
+		cprintf("GLES: draw_min_x or draw_min_y not set.\n");
 		return;
 	}
 	submit.min_x_tile = vc4->draw_min_x / vc4->tile_width;
@@ -84,15 +115,15 @@ void vc4_flush(struct vc4_context *vc4)
 		submit.clear_s = vc4->clear_stencil;
 	}
 
-	// vc4_dump_cl(vc4->bcl.vaddr, cl_offset(&vc4->bcl), 8, "bcl");
-	// vc4_dump_cl(vc4->shader_rec.vaddr, cl_offset(&vc4->shader_rec), 8,
+	// vc4_dump_cl(vc4->bcl.base, cl_offset(&vc4->bcl), 8, "bcl");
+	// vc4_dump_cl(vc4->shader_rec.base, cl_offset(&vc4->shader_rec), 8,
 	// 	    "shader_rec");
-	// vc4_dump_cl(vc4->bo_handles.vaddr, cl_offset(&vc4->bo_handles), 8,
+	// vc4_dump_cl(vc4->bo_handles.base, cl_offset(&vc4->bo_handles), 8,
 	// 	    "bo_handles");
 
-	int ret = vc4_submit_cl_ioctl(NULL, &submit);
+	int ret = ioctl(vc4->fd, DRM_IOCTL_VC4_SUBMIT_CL, &submit);
 	if (ret) {
-		cprintf("vc4: submit failed: %e.\n", ret);
+		cprintf("GLES: submit failed: %e.\n", ret);
 	}
 
 	vc4_reset_cl(&vc4->bcl);
@@ -105,18 +136,47 @@ void vc4_flush(struct vc4_context *vc4)
 	dump_fbo(vc4);
 }
 
-struct vc4_context *vc4_context_create(void)
+void vc4_context_destroy(struct gl_context *ctx)
+{
+	struct vc4_context *vc4 = vc4_context(ctx);
+
+	vc4_flush(ctx);
+
+	if (vc4->bcl.base) {
+		free(vc4->bcl.base);
+	}
+	if (vc4->shader_rec.base) {
+		free(vc4->shader_rec.base);
+	}
+	if (vc4->bo_handles.base) {
+		free(vc4->bo_handles.base);
+	}
+
+	free(vc4);
+}
+
+struct gl_context *vc4_context_create(int fd)
 {
 	struct vc4_context *vc4;
 
-	vc4 = (struct vc4_context *)kmalloc(sizeof(struct vc4_context));
+	vc4 = (struct vc4_context *)malloc(sizeof(struct vc4_context));
 	if (vc4 == NULL)
 		return NULL;
 
 	memset(vc4, 0, sizeof(struct vc4_context));
 
-	vc4_fbo_init(vc4);
-	vc4_program_init(vc4);
+	struct gl_context *ctx = &vc4->base;
+	ctx->destroy = vc4_context_destroy;
+	ctx->flush = vc4_flush;
+	vc4->fd = fd;
+
+	vc4_draw_init(ctx);
+	if (vc4_fbo_init(vc4)) {
+		return NULL;
+	}
+	if (vc4_program_init(vc4)) {
+		return NULL;
+	}
 
 	vc4_init_cl(&vc4->bcl);
 	vc4_init_cl(&vc4->shader_rec);
@@ -127,5 +187,5 @@ struct vc4_context *vc4_context_create(void)
 	vc4->draw_max_x = 0;
 	vc4->draw_max_y = 0;
 
-	return vc4;
+	return ctx;
 }

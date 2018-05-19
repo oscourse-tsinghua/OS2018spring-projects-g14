@@ -77,7 +77,7 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 
 	size += xtiles * ytiles * loop_body_size;
 
-	struct vc4_bo *rcl_bo = vc4_bo_create(dev, size, 1);
+	struct vc4_bo *rcl_bo = vc4_bo_create(dev, size);
 	if (rcl_bo == NULL) {
 		return -E_NOMEM;
 	}

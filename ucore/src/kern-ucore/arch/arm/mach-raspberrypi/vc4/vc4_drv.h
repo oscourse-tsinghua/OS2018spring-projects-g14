@@ -116,7 +116,7 @@ int vc4_create_bo_ioctl(struct device *dev, void *data);
 int vc4_mmap_bo_ioctl(struct device *dev, void *data);
 int vc4_submit_cl_ioctl(struct device *dev, void *data);
 
-struct vc4_bo *vc4_bo_create(struct device *dev, size_t size, size_t align);
+struct vc4_bo *vc4_bo_create(struct device *dev, size_t size);
 struct vc4_bo *vc4_lookup_bo(struct device *dev, uint32_t handle);
 void vc4_bo_destroy(struct device *dev, struct vc4_bo *bo);
 

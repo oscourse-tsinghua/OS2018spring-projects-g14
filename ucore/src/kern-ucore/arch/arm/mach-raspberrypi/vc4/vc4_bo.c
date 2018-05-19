@@ -1,10 +1,11 @@
+#include <vmm.h>
 #include <error.h>
 
 #include "vc4_drv.h"
 #include "vc4_drm.h"
 #include "mailbox_property.h"
 
-struct vc4_bo *vc4_bo_create(struct device *dev, size_t size, size_t align)
+struct vc4_bo *vc4_bo_create(struct device *dev, size_t size)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct vc4_bo *bo;
@@ -16,11 +17,10 @@ struct vc4_bo *vc4_bo_create(struct device *dev, size_t size, size_t align)
 	if (!size)
 		return NULL;
 
-	if (!align)
-		align = 1;
+	size = ROUNDUP(size, PGSIZE);
 
 	uint32_t handle =
-		mbox_mem_alloc(size, align, MEM_FLAG_COHERENT | MEM_FLAG_ZERO);
+		mbox_mem_alloc(size, PGSIZE, MEM_FLAG_COHERENT | MEM_FLAG_ZERO);
 	if (!handle) {
 		kprintf("VC4: unable to allocate memory with size %08x\n",
 			size);
@@ -46,8 +46,8 @@ struct vc4_bo *vc4_bo_create(struct device *dev, size_t size, size_t align)
 	bo->paddr = bus_addr;
 	bo->vaddr = (void *)bus_addr;
 
-	kprintf("vc4_bo_create: %08x %08x %08x %08x %08x\n", bo->size, align,
-		bo->handle, bo->paddr, bo->vaddr);
+	kprintf("vc4_bo_create: %08x %08x %08x %08x\n", bo->size, bo->handle,
+		bo->paddr, bo->vaddr);
 
 	return bo;
 
@@ -87,7 +87,7 @@ int vc4_create_bo_ioctl(struct device *dev, void *data)
 	struct vc4_bo *bo = NULL;
 	int ret;
 
-	bo = vc4_bo_create(dev, args->size, args->align);
+	bo = vc4_bo_create(dev, args->size);
 	if (bo == NULL)
 		return -E_NOMEM;
 
@@ -96,17 +96,43 @@ int vc4_create_bo_ioctl(struct device *dev, void *data)
 	return 0;
 }
 
+static int vc4_mmap(struct device *dev, struct vma_struct *vma, uintptr_t paddr)
+{
+	uintptr_t start = paddr;
+	start &= ~(PGSIZE - 1);
+	void *r = (void *)remap_pfn_range(vma->vm_start, start >> PGSHIFT,
+					  vma->vm_end - vma->vm_start);
+	if (!r) {
+		return -E_NOMEM;
+	}
+	vma->vm_start = (uintptr_t)r;
+	return 0;
+}
+
 int vc4_mmap_bo_ioctl(struct device *dev, void *data)
 {
 	struct drm_vc4_mmap_bo *args = data;
 	struct vc4_bo *bo;
+	int ret = 0;
 
 	bo = vc4_lookup_bo(dev, args->handle);
 	if (bo == NULL) {
 		return -E_INVAL;
 	}
 
-	args->offset = (uintptr_t)bo->vaddr;
+	struct vma_struct *vma = NULL;
+	vma = (struct vma_struct *)kmalloc(sizeof(struct vma_struct));
+	if (!vma) {
+		return -E_NOMEM;
+	}
 
-	return 0;
+	uint32_t len = ROUNDUP(bo->size, PGSIZE);
+	vma->vm_start = 0;
+	vma->vm_end = vma->vm_start + len;
+
+	ret = vc4_mmap(dev, vma, bo->paddr);
+	args->offset = vma->vm_start;
+	kfree(vma);
+
+	return ret;
 }

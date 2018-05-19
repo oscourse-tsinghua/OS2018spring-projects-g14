@@ -18,7 +18,7 @@ static int vc4_allocate_bin_bo(struct device *dev)
 	struct vc4_bo *bo;
 
 	uint32_t size = 512 * 1024;
-	bo = vc4_bo_create(dev, size, 0x1000);
+	bo = vc4_bo_create(dev, size);
 	if (bo == NULL) {
 		return -E_NOMEM;
 	}
@@ -106,13 +106,13 @@ static int vc4_ioctl(struct device *dev, int op, void *data)
 
 	switch (op) {
 	case DRM_IOCTL_VC4_SUBMIT_CL:
-		vc4_submit_cl_ioctl(dev, data);
+		ret = vc4_submit_cl_ioctl(dev, data);
 		break;
 	case DRM_IOCTL_VC4_CREATE_BO:
-		vc4_create_bo_ioctl(dev, data);
+		ret = vc4_create_bo_ioctl(dev, data);
 		break;
 	case DRM_IOCTL_VC4_MMAP_BO:
-		vc4_mmap_bo_ioctl(dev, data);
+		ret = vc4_mmap_bo_ioctl(dev, data);
 		break;
 	default:
 		ret = -E_INVAL;

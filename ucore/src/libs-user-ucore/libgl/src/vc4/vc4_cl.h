@@ -94,8 +94,6 @@ static inline void cl_aligned_f(struct vc4_cl *cl, float f)
 
 static inline void cl_start_reloc(struct vc4_cl *cl, uint32_t n)
 {
-	assert(n == 1 || n == 2);
-
 	cl_u8(cl, VC4_PACKET_GEM_HANDLES);
 	cl->reloc_next = cl->next;
 	cl_u32(cl, 0); /* Space where hindex will be written. */

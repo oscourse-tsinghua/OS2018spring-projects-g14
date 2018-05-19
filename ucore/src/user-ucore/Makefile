@@ -19,6 +19,7 @@ USER_APPLIST:= pwd cat sh ls cp echo link mkdir rename unlink lsmod insmod rmmod
 ifeq ($(UCONFIG_GPU_ENABLE),y)
 USER_APPLIST += gles
 TARGET_CFLAGS += -I$(USER_LIB_SRCDIR)/libgl/include
+TARGET_LDFLAGS += -L$(USER_LIB_OBJDIR)/libgl -lgl
 USER_LIB += $(USER_LIB_OBJDIR)/libgl/libgl.a
 endif
 
@@ -41,7 +42,7 @@ all:  $(BIN) $(TESTBIN) $(USER_LIB) $(USER_APP_BINS) $(USER_TEST_BINS)
 define make-user-app
 $2/$(notdir $1): $(USER_OBJ_ROOT)/$(addsuffix .o,$1) $(INITCODE_OBJ) $(USER_LIB)
 	@echo LINK $$@
-	$(TARGET_LD) $(TARGET_LDFLAGS) -static -T $(USER_LIB_SRCDIR)/arch/$(ARCH)/user.ld $(USER_OBJ_ROOT)/$(addsuffix .o,$1) $(INITCODE_OBJ) $(USER_LIB) -o $$@
+	$(TARGET_LD) -static -T $(USER_LIB_SRCDIR)/arch/$(ARCH)/user.ld $(USER_OBJ_ROOT)/$(addsuffix .o,$1) $(TARGET_LDFLAGS) $(INITCODE_OBJ) $(USER_LIB) -o $$@
 endef
 
 $(foreach bdir,$(USER_APPLIST),$(eval $(call make-user-app,$(bdir),$(BIN))))

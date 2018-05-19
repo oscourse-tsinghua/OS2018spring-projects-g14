@@ -44,8 +44,8 @@ static struct vc4_bo *get_vbo(struct vc4_context *vc4)
 {
 	struct vc4_bo *bo;
 	void *map;
-	bo = vc4_bo_alloc(sizeof(struct shaded_vertex) * 12, 0x10);
-	map = vc4_bo_map(bo);
+	bo = vc4_bo_alloc(vc4, sizeof(struct shaded_vertex) * 12);
+	map = vc4_bo_map(vc4, bo);
 
 	float sqrt3 = 1.7320508075688772f;
 	float sqrt6 = 2.449489742783178;
@@ -81,8 +81,8 @@ static struct vc4_bo *get_ibo(struct vc4_context *vc4)
 	struct vc4_bo *bo;
 	void *map;
 
-	bo = vc4_bo_alloc(sizeof(indices), 1);
-	map = vc4_bo_map(bo);
+	bo = vc4_bo_alloc(vc4, sizeof(indices));
+	map = vc4_bo_map(vc4, bo);
 	memcpy(map, indices, sizeof(indices));
 
 	return bo;
@@ -138,8 +138,10 @@ static void vc4_init_context_fbo(struct vc4_context *vc4)
 		ROUNDUP_DIV(vc4->framebuffer.height, vc4->tile_height);
 }
 
-static void vc4_draw_vbo(struct vc4_context *vc4)
+static void vc4_draw_vbo(struct gl_context *ctx)
 {
+	struct vc4_context *vc4 = vc4_context(ctx);
+
 	vc4_init_context_fbo(vc4);
 
 	vc4_start_draw(vc4);
@@ -174,11 +176,13 @@ static void vc4_draw_vbo(struct vc4_context *vc4)
 
 	vc4->shader_rec_count++;
 
-	vc4_flush(vc4);
+	vc4_flush(ctx);
 }
 
-static void vc4_clear(struct vc4_context *vc4, uint32_t color)
+static void vc4_clear(struct gl_context *ctx, uint32_t color)
 {
+	struct vc4_context *vc4 = vc4_context(ctx);
+
 	vc4->clear_color[0] = vc4->clear_color[1] = color;
 	vc4->clear_depth = 0;
 	vc4->clear_stencil = 0;
@@ -194,10 +198,8 @@ static void vc4_clear(struct vc4_context *vc4, uint32_t color)
 	vc4_start_draw(vc4);
 }
 
-void vc4_hello_triangle(void)
+void vc4_draw_init(struct gl_context *ctx)
 {
-	struct vc4_context *vc4 = vc4_context_create();
-
-	vc4_clear(vc4, 0x282c34);
-	vc4_draw_vbo(vc4);
+	ctx->draw_vbo = vc4_draw_vbo;
+	ctx->clear = vc4_clear;
 }

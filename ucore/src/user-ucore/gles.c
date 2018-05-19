@@ -1,6 +1,5 @@
 #include <GLES/gl.h>
 
-
 int main(int argc, char *argv[])
 {
 	cprintf("Hello GLES!!!\n");
@@ -10,4 +9,6 @@ int main(int argc, char *argv[])
 	glDrawTriangle();
 
 	glClose();
+
+	return 0;
 }

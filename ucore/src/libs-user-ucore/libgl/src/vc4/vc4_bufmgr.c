@@ -1,13 +1,18 @@
+#include <file.h>
+#include <malloc.h>
+
 #include "vc4_drm.h"
 #include "vc4_bufmgr.h"
 
-struct vc4_bo *vc4_bo_alloc(size_t size, size_t align)
+struct vc4_bo *vc4_bo_alloc(struct vc4_context *vc4, size_t size)
 {
 	struct drm_vc4_create_bo create;
 	struct vc4_bo *bo = NULL;
 	int ret;
 
-	bo = (struct vc4_bo *)kmalloc(sizeof(struct vc4_bo));
+	size = ROUNDUP(size, 4096);
+
+	bo = (struct vc4_bo *)malloc(sizeof(struct vc4_bo));
 	if (bo == NULL) {
 		return NULL;
 	}
@@ -15,11 +20,10 @@ struct vc4_bo *vc4_bo_alloc(size_t size, size_t align)
 	memset(bo, 0, sizeof(struct vc4_bo));
 	memset(&create, 0, sizeof(create));
 	create.size = size;
-	create.align = align;
-	ret = vc4_create_bo_ioctl(NULL, &create);
+	ret = ioctl(vc4->fd, DRM_IOCTL_VC4_CREATE_BO, &create);
 	if (ret != 0) {
-		kprintf("GLES: alloc bo ioctl failure.\n");
-		kfree(bo);
+		cprintf("GLES: alloc bo ioctl failure: %e.\n", ret);
+		free(bo);
 		return NULL;
 	}
 
@@ -29,13 +33,17 @@ struct vc4_bo *vc4_bo_alloc(size_t size, size_t align)
 	return bo;
 }
 
-struct vc4_bo *vc4_bo_free(struct vc4_bo *bo)
+struct vc4_bo *vc4_bo_free(struct vc4_context *vc4, struct vc4_bo *bo)
 {
 }
 
-void *vc4_bo_map(struct vc4_bo *bo)
+void *vc4_bo_map(struct vc4_context *vc4, struct vc4_bo *bo)
 {
 	int ret;
+
+	if (bo == NULL) {
+		return NULL;
+	}
 
 	if (bo->map)
 		return bo->map;
@@ -44,9 +52,9 @@ void *vc4_bo_map(struct vc4_bo *bo)
 	memset(&map, 0, sizeof(map));
 
 	map.handle = bo->handle;
-	ret = vc4_mmap_bo_ioctl(NULL, &map);
+	ret = ioctl(vc4->fd, DRM_IOCTL_VC4_MMAP_BO, &map);
 	if (ret != 0) {
-		kprintf("GLES: map ioctl failure.\n");
+		cprintf("GLES: map ioctl failure: %e.\n", ret);
 		return NULL;
 	}
 

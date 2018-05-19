@@ -3,6 +3,7 @@
 
 #include <types.h>
 
+#include "gl_context.h"
 #include "vc4_cl.h"
 #include "vc4_bufmgr.h"
 
@@ -17,6 +18,9 @@ struct vc4_framebuffer_state {
 };
 
 struct vc4_context {
+	struct gl_context base;
+	int fd;
+
 	struct vc4_cl bcl;
 	struct vc4_cl shader_rec;
 	struct vc4_cl bo_handles;
@@ -71,9 +75,17 @@ struct vc4_context {
 	struct vc4_framebuffer_state framebuffer;
 };
 
-struct vc4_context *vc4_context_create(void);
-void vc4_program_init(struct vc4_context *vc4);
-void vc4_flush(struct vc4_context *vc4);
+static inline struct vc4_context *vc4_context(struct gl_context *ctx)
+{
+	return (struct vc4_context *)ctx;
+}
+
+struct gl_context *vc4_context_create(int fd);
+void vc4_draw_init(struct gl_context *ctx);
+int vc4_program_init(struct vc4_context *vc4);
 void vc4_emit_state(struct vc4_context *vc4);
+
+void vc4_context_destroy(struct gl_context *ctx);
+void vc4_flush(struct gl_context *ctx);
 
 #endif // VC4_CONTEXT
