@@ -85,6 +85,7 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 	setup->base = rcl_bo->vaddr;
 	setup->next = setup->base;
 	setup->size = size;
+	list_add_before(&exec->unref_list, &rcl_bo->unref_head);
 
 	/* The tile buffer gets cleared when the previous tile is stored.  If
 	 * the clear values changed between frames, then the tile buffer has

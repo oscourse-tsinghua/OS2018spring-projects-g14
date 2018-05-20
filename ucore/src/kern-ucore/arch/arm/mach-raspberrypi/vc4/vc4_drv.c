@@ -114,6 +114,9 @@ static int vc4_ioctl(struct device *dev, int op, void *data)
 	case DRM_IOCTL_VC4_MMAP_BO:
 		ret = vc4_mmap_bo_ioctl(dev, data);
 		break;
+	case DRM_IOCTL_VC4_FREE_BO:
+		ret = vc4_free_bo_ioctl(dev, data);
+		break;
 	default:
 		ret = -E_INVAL;
 	}

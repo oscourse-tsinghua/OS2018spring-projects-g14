@@ -4,6 +4,7 @@
 #include <arm.h>
 #include <dev.h>
 #include <mmu.h>
+#include <list.h>
 #include <types.h>
 
 #include "vc4_regs.h"
@@ -39,6 +40,11 @@ struct vc4_bo {
 	uint32_t handle;
 	uint32_t paddr;
 	void *vaddr;
+
+	/* List entry for the BO's position in either
+	 * vc4_exec_info->unref_list or vc4_dev->bo_cache.time_list
+	 */
+	list_entry_t unref_head;
 };
 
 struct vc4_exec_info {
@@ -50,6 +56,11 @@ struct vc4_exec_info {
 	 */
 	struct vc4_bo **bo;
 	uint32_t bo_count;
+
+	/* List of other BOs used in the job that need to be released
+	 * once the job is complete.
+	 */
+	list_entry_t unref_list;
 
 	/* Current unvalidated indices into @bo loaded by the non-hardware
 	 * VC4_PACKET_GEM_HANDLES.
@@ -107,6 +118,8 @@ struct vc4_exec_info {
 	uint32_t shader_rec_size;
 };
 
+#define le2bo(le, member) to_struct((le), struct vc4_bo, member)
+
 #define V3D_READ(offset) inw(V3D_BASE + offset)
 #define V3D_WRITE(offset, val) outw(V3D_BASE + offset, val)
 
@@ -114,6 +127,7 @@ int dev_init_vc4();
 
 int vc4_create_bo_ioctl(struct device *dev, void *data);
 int vc4_mmap_bo_ioctl(struct device *dev, void *data);
+int vc4_free_bo_ioctl(struct device *dev, void *data);
 int vc4_submit_cl_ioctl(struct device *dev, void *data);
 
 struct vc4_bo *vc4_bo_create(struct device *dev, size_t size);

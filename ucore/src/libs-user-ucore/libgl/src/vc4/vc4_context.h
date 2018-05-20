@@ -24,6 +24,7 @@ struct vc4_context {
 	struct vc4_cl bcl;
 	struct vc4_cl shader_rec;
 	struct vc4_cl bo_handles;
+	struct vc4_cl bo_pointers;
 	uint32_t shader_rec_count;
 
 	/** @{

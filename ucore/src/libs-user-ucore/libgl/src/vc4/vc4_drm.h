@@ -14,6 +14,7 @@
 #define DRM_IOCTL_VC4_SET_TILING                        0x08
 #define DRM_IOCTL_VC4_GET_TILING                        0x09
 #define DRM_IOCTL_VC4_LABEL_BO                          0x0a
+#define DRM_IOCTL_VC4_FREE_BO                           0x0b
 
 struct drm_vc4_submit_rcl_surface {
 	__u32 hindex; /* Handle index, or ~0 if not present. */
@@ -122,6 +123,11 @@ struct drm_vc4_mmap_bo {
 	__u32 handle;
 	/** offset into the drm node to use for subsequent mmap call. */
 	__u32 offset;
+};
+
+struct drm_vc4_free_bo {
+	/** Handle for the object to free. */
+	__u32 handle;
 };
 
 #endif // VC4_DRM_H

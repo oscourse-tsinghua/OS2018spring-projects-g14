@@ -1,4 +1,5 @@
 #include <vmm.h>
+#include <list.h>
 #include <error.h>
 
 #include "vc4_drv.h"
@@ -45,6 +46,7 @@ struct vc4_bo *vc4_bo_create(struct device *dev, size_t size)
 	bo->handle = handle;
 	bo->paddr = bus_addr;
 	bo->vaddr = (void *)bus_addr;
+	list_init(&bo->unref_head);
 
 	kprintf("vc4_bo_create: %08x %08x %08x %08x\n", bo->size, bo->handle,
 		bo->paddr, bo->vaddr);
@@ -61,7 +63,7 @@ void vc4_bo_destroy(struct device *dev, struct vc4_bo *bo)
 	__ucore_iounmap(bo->vaddr, bo->size);
 	mbox_mem_unlock(bo->handle);
 	mbox_mem_free(bo->handle);
-	kfree(bo);
+	memset(bo, 0, sizeof(struct vc4_bo));
 }
 
 struct vc4_bo *vc4_lookup_bo(struct device *dev, uint32_t handle)
@@ -133,6 +135,22 @@ int vc4_mmap_bo_ioctl(struct device *dev, void *data)
 	ret = vc4_mmap(dev, vma, bo->paddr);
 	args->offset = vma->vm_start;
 	kfree(vma);
+
+	return ret;
+}
+
+int vc4_free_bo_ioctl(struct device *dev, void *data)
+{
+	struct drm_vc4_free_bo *args = data;
+	struct vc4_bo *bo;
+	int ret = 0;
+
+	bo = vc4_lookup_bo(dev, args->handle);
+	if (bo == NULL) {
+		return -E_INVAL;
+	}
+
+	vc4_bo_destroy(dev, bo);
 
 	return ret;
 }

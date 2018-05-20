@@ -23,6 +23,7 @@ static void vc4_get_draw_cl_space(struct vc4_context *vc4, int vert_count)
 	cl_ensure_space(&vc4->shader_rec, 16 * num_draws);
 
 	cl_ensure_space(&vc4->bo_handles, 20 * sizeof(uint32_t));
+	cl_ensure_space(&vc4->bo_pointers, 20 * sizeof(uintptr_t));
 }
 
 static size_t emit_triangle(void *vaddr, float r, float g, float b, float x1,

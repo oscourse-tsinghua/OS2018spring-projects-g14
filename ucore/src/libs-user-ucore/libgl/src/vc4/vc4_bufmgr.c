@@ -1,6 +1,7 @@
 #include <file.h>
 #include <malloc.h>
 
+#include "vc4_cl.h"
 #include "vc4_drm.h"
 #include "vc4_bufmgr.h"
 
@@ -30,11 +31,33 @@ struct vc4_bo *vc4_bo_alloc(struct vc4_context *vc4, size_t size)
 	bo->size = size;
 	bo->handle = create.handle;
 
+	cl_u32(&vc4->bo_pointers, (uintptr_t)bo);
+
 	return bo;
 }
 
-struct vc4_bo *vc4_bo_free(struct vc4_context *vc4, struct vc4_bo *bo)
+void vc4_bo_free(struct vc4_context *vc4, struct vc4_bo *bo)
 {
+	int ret;
+
+	if (bo == NULL) {
+		return;
+	}
+
+	if (bo->map) {
+		sys_munmap(bo->map, bo->size);
+	}
+
+	struct drm_vc4_free_bo f;
+	memset(&f, 0, sizeof(f));
+
+	f.handle = bo->handle;
+	ret = ioctl(vc4->fd, DRM_IOCTL_VC4_FREE_BO, &f);
+	if (ret != 0) {
+		cprintf("GLES: free bo ioctl failure: %e.\n", ret);
+	}
+
+	free(bo);
 }
 
 void *vc4_bo_map(struct vc4_context *vc4, struct vc4_bo *bo)

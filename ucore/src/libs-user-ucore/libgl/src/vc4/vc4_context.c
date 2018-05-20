@@ -142,6 +142,12 @@ void vc4_context_destroy(struct gl_context *ctx)
 
 	vc4_flush(ctx);
 
+	int i;
+	struct vc4_bo **referenced_bos = vc4->bo_pointers.base;
+	for (i = 0; i < cl_offset(&vc4->bo_pointers) / 4; i++) {
+		vc4_bo_free(vc4, referenced_bos[i]);
+	}
+
 	if (vc4->bcl.base) {
 		free(vc4->bcl.base);
 	}
@@ -150,6 +156,9 @@ void vc4_context_destroy(struct gl_context *ctx)
 	}
 	if (vc4->bo_handles.base) {
 		free(vc4->bo_handles.base);
+	}
+	if (vc4->bo_pointers.base) {
+		free(vc4->bo_pointers.base);
 	}
 
 	free(vc4);
@@ -170,6 +179,12 @@ struct gl_context *vc4_context_create(int fd)
 	ctx->flush = vc4_flush;
 	vc4->fd = fd;
 
+	vc4_init_cl(&vc4->bcl);
+	vc4_init_cl(&vc4->shader_rec);
+	vc4_init_cl(&vc4->bo_handles);
+	vc4_init_cl(&vc4->bo_pointers);
+	cl_ensure_space(&vc4->bo_pointers, 2 * sizeof(uintptr_t));
+
 	vc4_draw_init(ctx);
 	if (vc4_fbo_init(vc4)) {
 		return NULL;
@@ -177,10 +192,6 @@ struct gl_context *vc4_context_create(int fd)
 	if (vc4_program_init(vc4)) {
 		return NULL;
 	}
-
-	vc4_init_cl(&vc4->bcl);
-	vc4_init_cl(&vc4->shader_rec);
-	vc4_init_cl(&vc4->bo_handles);
 
 	vc4->draw_min_x = ~0;
 	vc4->draw_min_y = ~0;

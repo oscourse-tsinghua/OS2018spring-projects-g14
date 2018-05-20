@@ -6,7 +6,8 @@
 #include "vc4_drm.h"
 #include "vc4_regs.h"
 
-static void submit_cl(struct device *dev, uint32_t thread, uint32_t start, uint32_t end)
+static void submit_cl(struct device *dev, uint32_t thread, uint32_t start,
+		      uint32_t end)
 {
 	/* Set the current and end address of the control list.
 	 * Writing the end register is what starts the job.
@@ -36,7 +37,8 @@ static void vc4_flush_caches(struct device *dev)
 				       VC4_SET_FIELD(0xf, V3D_SLCACTL_ICC));
 }
 
-static void vc4_submit_next_bin_job(struct device *dev, struct vc4_exec_info *exec)
+static void vc4_submit_next_bin_job(struct device *dev,
+				    struct vc4_exec_info *exec)
 {
 	if (!exec)
 		return;
@@ -59,7 +61,8 @@ static void vc4_submit_next_bin_job(struct device *dev, struct vc4_exec_info *ex
 	while (V3D_READ(V3D_BFC) == 0);
 }
 
-static void vc4_submit_next_render_job(struct device *dev, struct vc4_exec_info *exec)
+static void vc4_submit_next_render_job(struct device *dev,
+				       struct vc4_exec_info *exec)
 {
 	if (!exec)
 		return;
@@ -219,6 +222,8 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	}
 	exec->exec_bo = bo;
 
+	list_add_before(&exec->unref_list, &exec->exec_bo->unref_head);
+
 	exec->ct0ca = exec->exec_bo->paddr + bin_offset;
 
 	exec->bin_u = bin;
@@ -236,8 +241,6 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	if (ret)
 		goto fail;
 
-	return 0;
-
 fail:
 	kfree(temp);
 	return ret;
@@ -245,6 +248,19 @@ fail:
 
 static void vc4_complete_exec(struct device *dev, struct vc4_exec_info *exec)
 {
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+
+	if (exec->bo) {
+		kfree(exec->bo);
+	}
+
+	while (!list_empty(&exec->unref_list)) {
+		list_entry_t *le = list_next(&exec->unref_list);
+		struct vc4_bo *bo = le2bo(le, unref_head);
+		list_del(&bo->unref_head);
+		vc4_bo_destroy(dev, bo);
+	}
+
 	kfree(exec);
 }
 
@@ -273,6 +289,7 @@ int vc4_submit_cl_ioctl(struct device *dev, void *data)
 
 	memset(exec, 0, sizeof(struct vc4_exec_info));
 	exec->args = args;
+	list_init(&exec->unref_list);
 
 	ret = vc4_cl_lookup_bos(dev, exec);
 	if (ret)
@@ -297,8 +314,6 @@ int vc4_submit_cl_ioctl(struct device *dev, void *data)
 	exec->args = NULL;
 
 	vc4_queue_submit(dev, exec);
-
-	return 0;
 
 fail:
 	vc4_complete_exec(dev, exec);
