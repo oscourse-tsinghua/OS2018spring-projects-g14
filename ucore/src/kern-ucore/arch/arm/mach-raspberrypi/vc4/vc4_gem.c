@@ -109,6 +109,7 @@ static int vc4_cl_lookup_bos(struct device *dev, struct vc4_exec_info *exec)
 	uint32_t *handles;
 	int ret = 0;
 	int i;
+	assert(mm);
 
 	exec->bo_count = args->bo_handle_count;
 
@@ -134,16 +135,12 @@ static int vc4_cl_lookup_bos(struct device *dev, struct vc4_exec_info *exec)
 		goto fail;
 	}
 
-	memcpy(handles, (void *)(uintptr_t)args->bo_handles,
-	       exec->bo_count * sizeof(uint32_t));
-	/*
-	if (!copy_from_user(mm, handles, args->bo_handles,
-			   exec->bo_count * sizeof(uint32_t), 0)) {
+	if (!copy_from_user(mm, handles, (uintptr_t)args->bo_handles,
+			    exec->bo_count * sizeof(uint32_t), 0)) {
 		ret = -E_FAULT;
 		kprintf("vc4: Failed to copy in GEM handles\n");
 		goto fail;
 	}
-	*/
 
 	for (i = 0; i < exec->bo_count; i++) {
 		struct vc4_bo *bo = vc4_lookup_bo(dev, handles[i]);
@@ -167,6 +164,9 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	void *temp = NULL;
 	void *bin;
 	int ret = 0;
+	struct mm_struct *mm = current->mm;
+	assert(mm);
+
 	uint32_t bin_offset = 0;
 	uint32_t shader_rec_offset =
 		ROUNDUP(bin_offset + args->bin_cl_size, 16);
@@ -199,9 +199,17 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	exec->shader_state = temp + exec_size;
 	exec->shader_state_size = args->shader_rec_count;
 
-	memcpy(bin, (void *)(uintptr_t)args->bin_cl, args->bin_cl_size);
-	memcpy(exec->shader_rec_u, (void *)(uintptr_t)args->shader_rec,
-	       args->shader_rec_size);
+	if (!copy_from_user(mm, bin, (uintptr_t)args->bin_cl, args->bin_cl_size,
+			    0)) {
+		ret = -E_FAULT;
+		goto fail;
+	}
+
+	if (!copy_from_user(mm, exec->shader_rec_u, (uintptr_t)args->shader_rec,
+			    args->shader_rec_size, 0)) {
+		ret = -E_FAULT;
+		goto fail;
+	}
 
 	bo = vc4_bo_create(dev, exec_size);
 	if (bo == NULL) {
