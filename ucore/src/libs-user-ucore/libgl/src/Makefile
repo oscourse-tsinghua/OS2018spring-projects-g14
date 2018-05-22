@@ -9,9 +9,9 @@ ULIB_SRC_ROOT := ../..
 TARGET_CFLAGS += -I. -I../include -I$(ULIB_SRC_ROOT) -I$(ULIB_SRC_ROOT)/common -I$(ULIB_SRC_ROOT)/arch/$(ARCH) -nostdinc -nostdlib -fno-builtin
 obj-y += gl.o
 
-include vc4/Makefile
+include drivers/vc4/Makefile
 
-obj-y += $(addprefix vc4/, $(VC4_OBJS))
+obj-y += $(addprefix drivers/vc4/, $(VC4_OBJS))
 target-obj := $(addprefix $(LIBGL_OBJ_ROOT)/, $(obj-y))
 
 all: $(target-obj) $(LIBGL_A)
@@ -27,7 +27,7 @@ $(LIBGL_OBJ_ROOT)/%.o: %.S | $(LIBGL_OBJ_ROOT)
 
 $(LIBGL_OBJ_ROOT):
 	@mkdir -p $(LIBGL_OBJ_ROOT)
-	@mkdir -p $(LIBGL_OBJ_ROOT)/vc4
+	@mkdir -p $(LIBGL_OBJ_ROOT)/drivers/vc4
 
 clean:
 	find . -name \*.o -exec rm -f {} \;

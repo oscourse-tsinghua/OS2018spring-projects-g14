@@ -139,9 +139,9 @@ static void vc4_init_context_fbo(struct vc4_context *vc4)
 		ROUNDUP_DIV(vc4->framebuffer.height, vc4->tile_height);
 }
 
-static void vc4_draw_vbo(struct gl_context *ctx)
+static void vc4_draw_vbo(struct pipe_context *pctx)
 {
-	struct vc4_context *vc4 = vc4_context(ctx);
+	struct vc4_context *vc4 = vc4_context(pctx);
 
 	vc4_init_context_fbo(vc4);
 
@@ -177,12 +177,12 @@ static void vc4_draw_vbo(struct gl_context *ctx)
 
 	vc4->shader_rec_count++;
 
-	vc4_flush(ctx);
+	vc4_flush(pctx);
 }
 
-static void vc4_clear(struct gl_context *ctx, uint32_t color)
+static void vc4_clear(struct pipe_context *pctx, uint32_t color)
 {
-	struct vc4_context *vc4 = vc4_context(ctx);
+	struct vc4_context *vc4 = vc4_context(pctx);
 
 	vc4->clear_color[0] = vc4->clear_color[1] = color;
 	vc4->clear_depth = 0;
@@ -199,8 +199,8 @@ static void vc4_clear(struct gl_context *ctx, uint32_t color)
 	vc4_start_draw(vc4);
 }
 
-void vc4_draw_init(struct gl_context *ctx)
+void vc4_draw_init(struct pipe_context *pctx)
 {
-	ctx->draw_vbo = vc4_draw_vbo;
-	ctx->clear = vc4_clear;
+	pctx->draw_vbo = vc4_draw_vbo;
+	pctx->clear = vc4_clear;
 }

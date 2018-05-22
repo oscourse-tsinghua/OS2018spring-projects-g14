@@ -1,6 +1,3 @@
-#include <fb.h>
-#include <error.h>
-#include <unistd.h>
 #include <malloc.h>
 
 #include "vc4_drm.h"
@@ -9,7 +6,7 @@
 
 static void dump_fbo(struct vc4_context *vc4)
 {
-	struct vc4_framebuffer_state *fb = &vc4->framebuffer;
+	struct pipe_framebuffer_state *fb = &vc4->framebuffer;
 	uint32_t center_x = fb->width / 2;
 	uint32_t center_y = fb->height / 2;
 
@@ -30,43 +27,9 @@ static void dump_fbo(struct vc4_context *vc4)
 	}
 }
 
-static int vc4_fbo_init(struct vc4_context *vc4)
+void vc4_flush(struct pipe_context *pctx)
 {
-	struct fb_var_screeninfo var;
-	int fb_fd = open("fb0:", O_RDWR);
-	int ret = 0;
-
-	if (fb_fd == 0) {
-		return -E_NOENT;
-	}
-
-	if ((ret = ioctl(fb_fd, FBIOGET_VSCREENINFO, &var))) {
-		cprintf("GLES: fb ioctl error\n");
-		goto out;
-	}
-
-	uint32_t size = var.xres * var.yres * var.bits_per_pixel >> 3;
-
-	void *buf = (void *)sys_linux_mmap(0, size, fb_fd, 0);
-	if (buf == NULL) {
-		cprintf("GLES: fb mmap error\n");
-		ret = -E_NOMEM;
-		goto out;
-	}
-
-	vc4->framebuffer.width = var.xres;
-	vc4->framebuffer.height = var.yres;
-	vc4->framebuffer.bits_per_pixel = var.bits_per_pixel;
-	vc4->framebuffer.screen_base = buf;
-
-out:
-	close(fb_fd);
-	return ret;
-}
-
-void vc4_flush(struct gl_context *ctx)
-{
-	struct vc4_context *vc4 = vc4_context(ctx);
+	struct vc4_context *vc4 = vc4_context(pctx);
 
 	if (!vc4->needs_flush)
 		return;
@@ -136,11 +99,11 @@ void vc4_flush(struct gl_context *ctx)
 	dump_fbo(vc4);
 }
 
-void vc4_context_destroy(struct gl_context *ctx)
+void vc4_context_destroy(struct pipe_context *pctx)
 {
-	struct vc4_context *vc4 = vc4_context(ctx);
+	struct vc4_context *vc4 = vc4_context(pctx);
 
-	vc4_flush(ctx);
+	vc4_flush(pctx);
 
 	int i;
 	struct vc4_bo **referenced_bos = vc4->bo_pointers.base;
@@ -164,7 +127,7 @@ void vc4_context_destroy(struct gl_context *ctx)
 	free(vc4);
 }
 
-struct gl_context *vc4_context_create(int fd)
+static struct pipe_context *vc4_context_create(int fd)
 {
 	struct vc4_context *vc4;
 
@@ -174,9 +137,9 @@ struct gl_context *vc4_context_create(int fd)
 
 	memset(vc4, 0, sizeof(struct vc4_context));
 
-	struct gl_context *ctx = &vc4->base;
-	ctx->destroy = vc4_context_destroy;
-	ctx->flush = vc4_flush;
+	struct pipe_context *pctx = &vc4->base;
+	pctx->destroy = vc4_context_destroy;
+	pctx->flush = vc4_flush;
 	vc4->fd = fd;
 
 	vc4_init_cl(&vc4->bcl);
@@ -185,18 +148,19 @@ struct gl_context *vc4_context_create(int fd)
 	vc4_init_cl(&vc4->bo_pointers);
 	cl_ensure_space(&vc4->bo_pointers, 2 * sizeof(uintptr_t));
 
-	vc4_draw_init(ctx);
-	if (vc4_fbo_init(vc4)) {
-		return NULL;
-	}
-	if (vc4_program_init(vc4)) {
-		return NULL;
-	}
+	vc4_draw_init(pctx);
+	vc4_state_init(pctx);
+	vc4_program_init(pctx);
 
 	vc4->draw_min_x = ~0;
 	vc4->draw_min_y = ~0;
 	vc4->draw_max_x = 0;
 	vc4->draw_max_y = 0;
 
-	return ctx;
+	return pctx;
+}
+
+struct pipe_context *pipe_context_create(int fd)
+{
+	return vc4_context_create(fd);
 }

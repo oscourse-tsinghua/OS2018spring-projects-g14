@@ -3,7 +3,7 @@
 
 #include <types.h>
 
-#include "gl_context.h"
+#include "pipe/p_context.h"
 #include "vc4_cl.h"
 #include "vc4_bufmgr.h"
 
@@ -11,14 +11,8 @@ struct vc4_program_stateobj {
 	struct vc4_bo *vs, *fs;
 };
 
-struct vc4_framebuffer_state {
-	uint32_t width, height;
-	uint32_t bits_per_pixel;
-	void *screen_base;
-};
-
 struct vc4_context {
-	struct gl_context base;
+	struct pipe_context base;
 	int fd;
 
 	struct vc4_cl bcl;
@@ -73,20 +67,23 @@ struct vc4_context {
 	struct vc4_program_stateobj prog;
 	struct vc4_bo *uniforms;
 
-	struct vc4_framebuffer_state framebuffer;
+	struct pipe_framebuffer_state framebuffer;
+
+	struct pipe_viewport_state viewport;
 };
 
-static inline struct vc4_context *vc4_context(struct gl_context *ctx)
+static inline struct vc4_context *vc4_context(struct pipe_context *pctx)
 {
-	return (struct vc4_context *)ctx;
+	return (struct vc4_context *)pctx;
 }
 
-struct gl_context *vc4_context_create(int fd);
-void vc4_draw_init(struct gl_context *ctx);
-int vc4_program_init(struct vc4_context *vc4);
 void vc4_emit_state(struct vc4_context *vc4);
 
-void vc4_context_destroy(struct gl_context *ctx);
-void vc4_flush(struct gl_context *ctx);
+void vc4_draw_init(struct pipe_context *pctx);
+void vc4_state_init(struct pipe_context *pctx);
+void vc4_program_init(struct pipe_context *pctx);
+
+void vc4_context_destroy(struct pipe_context *pctx);
+void vc4_flush(struct pipe_context *pctx);
 
 #endif // VC4_CONTEXT

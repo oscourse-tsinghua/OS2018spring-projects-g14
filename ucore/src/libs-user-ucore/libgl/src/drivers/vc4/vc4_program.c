@@ -3,8 +3,10 @@
 #include "vc4_bufmgr.h"
 #include "vc4_context.h"
 
-static struct vc4_bo *vc4_create_fs(struct vc4_context *vc4)
+static int vc4_create_fs(struct pipe_context *pctx)
 {
+	struct vc4_context *vc4 = vc4_context(pctx);
+
 	static const uint32_t ins[] = {
 		0x958e0dbf, 0xd1724823, /* mov r0, vary; mov r3.8d, 1.0 */
 		0x818e7176, 0x40024821, /* fadd r0, r0, r5; mov r1, vary */
@@ -20,22 +22,22 @@ static struct vc4_bo *vc4_create_fs(struct vc4_context *vc4)
 	struct vc4_bo *fs = vc4_bo_alloc(vc4, sizeof(ins));
 	void *map = vc4_bo_map(vc4, fs);
 	if (map == NULL) {
-		return NULL;
+		return -E_NOMEM;
 	}
-
 	memcpy(map, ins, sizeof(ins));
 
-	return fs;
-}
-
-int vc4_program_init(struct vc4_context *vc4)
-{
-	vc4->prog.fs = vc4_create_fs(vc4);
-	vc4->uniforms = vc4_bo_alloc(vc4, 0x1000);
-
-	if (vc4->prog.fs == NULL || vc4->uniforms == NULL) {
+	struct vc4_bo *uniforms = vc4_bo_alloc(vc4, 0x1000);
+	if (uniforms == NULL) {
 		return -E_NOMEM;
 	}
 
+	vc4->prog.fs = fs;
+	vc4->uniforms = uniforms;
+
 	return 0;
+}
+
+void vc4_program_init(struct pipe_context *pctx)
+{
+	pctx->create_fs_state = vc4_create_fs;
 }
