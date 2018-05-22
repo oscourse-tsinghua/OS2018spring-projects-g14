@@ -5,17 +5,16 @@ int main(int argc, char *argv[])
 {
 	cprintf("Hello GLES!!!\n");
 
-	if (glOpen()) {
-		return 1;
-	}
+	EGLDisplay dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+	EGLContext ctx = eglCreateContext(dpy);
 
-	if (eglCreateWindowSurface()) {
+	if (!eglMakeCurrent(dpy, ctx)) {
 		return 1;
 	}
 
 	glDrawTriangle();
 
-	glClose();
+	eglDestroyContext(dpy, ctx);
 
 	return 0;
 }

@@ -1,7 +1,8 @@
 #ifndef PIPE_CONTEXT_H
 #define PIPE_CONTEXT_H
 
-#include "p_state.h"
+struct pipe_framebuffer_state;
+struct pipe_viewport_state;
 
 struct pipe_context {
 	void (*destroy)(struct pipe_context *ctx);

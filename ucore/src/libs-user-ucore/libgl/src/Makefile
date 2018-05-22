@@ -7,7 +7,7 @@ LIBGL_A := $(LIBGL_OBJ_ROOT)/libgl.a
 ULIB_SRC_ROOT := ../..
 
 TARGET_CFLAGS += -I. -I../include -I$(ULIB_SRC_ROOT) -I$(ULIB_SRC_ROOT)/common -I$(ULIB_SRC_ROOT)/arch/$(ARCH) -nostdinc -nostdlib -fno-builtin
-obj-y += gl.o
+obj-y += gl.o egl.o
 
 include drivers/vc4/Makefile
 

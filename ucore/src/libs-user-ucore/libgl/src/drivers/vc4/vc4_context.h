@@ -4,6 +4,7 @@
 #include <types.h>
 
 #include "pipe/p_context.h"
+#include "pipe/p_state.h"
 #include "vc4_cl.h"
 #include "vc4_bufmgr.h"
 
