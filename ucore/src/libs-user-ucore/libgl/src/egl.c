@@ -26,8 +26,8 @@ static void initContext(EGLDisplay dpy, EGLContext ctx)
 	clear_state->stencil = 0;
 	memset(clear_state->color, 0, sizeof(union pipe_color_union));
 
-	glViewport(0, 0, framebuffer->width, framebuffer->height);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BITS | GL_STENCIL_BITS);
+	glViewport(0, 0, framebuffer->width, framebuffer->height);
 }
 
 EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id)

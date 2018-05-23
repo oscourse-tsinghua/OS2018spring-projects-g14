@@ -5,6 +5,7 @@
 #include "pipe/p_context.h"
 
 struct pipe_context *pipe_ctx;
+static GLenum last_error = GL_NO_ERROR;
 
 GL_API void GL_APIENTRY glClearColor(GLfloat red, GLfloat green, GLfloat blue,
 				     GLfloat alpha)
@@ -28,6 +29,12 @@ GL_API void GL_APIENTRY glClearStencil(GLint s)
 
 GL_API void GL_APIENTRY glClear(GLbitfield mask)
 {
+	if (mask & ~(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
+		     GL_STENCIL_BUFFER_BIT)) {
+		last_error = GL_INVALID_VALUE;
+		return;
+	}
+
 	struct pipe_clear_state *clear_state = &pipe_ctx->clear_state;
 
 	clear_state->buffers = 0;
@@ -60,6 +67,11 @@ GL_API void GL_APIENTRY glFlush(void)
 	pipe_ctx->flush(pipe_ctx);
 }
 
+GL_API GLenum GL_APIENTRY glGetError(void)
+{
+	return last_error;
+}
+
 GL_API void GL_APIENTRY glVertexPointer(GLint size, GLenum type, GLsizei stride,
 					const void *pointer)
 {
@@ -68,6 +80,11 @@ GL_API void GL_APIENTRY glVertexPointer(GLint size, GLenum type, GLsizei stride,
 GL_API void GL_APIENTRY glViewport(GLint x, GLint y, GLsizei width,
 				   GLsizei height)
 {
+	if (width < 0 || height < 0) {
+		last_error = GL_INVALID_VALUE;
+		return;
+	}
+
 	struct pipe_viewport_state viewport;
 	float half_width = 0.5f * width;
 	float half_height = 0.5f * height;
