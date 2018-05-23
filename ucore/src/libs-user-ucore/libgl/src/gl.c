@@ -1,6 +1,7 @@
 #include <GLES/gl.h>
 
 #include "pipe/p_state.h"
+#include "pipe/p_defines.h"
 #include "pipe/p_context.h"
 
 struct pipe_context *pipe_ctx;
@@ -8,10 +9,40 @@ struct pipe_context *pipe_ctx;
 GL_API void GL_APIENTRY glClearColor(GLfloat red, GLfloat green, GLfloat blue,
 				     GLfloat alpha)
 {
+	struct pipe_clear_state *clear_state = &pipe_ctx->clear_state;
+	clear_state->color.f[0] = red;
+	clear_state->color.f[1] = green;
+	clear_state->color.f[2] = blue;
+	clear_state->color.f[3] = alpha;
+}
+
+GL_API void GL_APIENTRY glClearDepthf(GLclampf depth)
+{
+	pipe_ctx->clear_state.depth = depth;
+}
+
+GL_API void GL_APIENTRY glClearStencil(GLint s)
+{
+	pipe_ctx->clear_state.stencil = s;
 }
 
 GL_API void GL_APIENTRY glClear(GLbitfield mask)
 {
+	struct pipe_clear_state *clear_state = &pipe_ctx->clear_state;
+
+	clear_state->buffers = 0;
+	if (mask & GL_COLOR_BUFFER_BIT) {
+		clear_state->buffers |= PIPE_CLEAR_COLOR;
+	}
+	if (mask & GL_DEPTH_BUFFER_BIT) {
+		clear_state->buffers |= PIPE_CLEAR_DEPTH;
+	}
+	if (mask & GL_STENCIL_BUFFER_BIT) {
+		clear_state->buffers |= PIPE_CLEAR_STENCIL;
+	}
+
+	pipe_ctx->clear(pipe_ctx, clear_state->buffers, &clear_state->color,
+			clear_state->depth, clear_state->stencil);
 }
 
 GL_API void GL_APIENTRY glColorPointer(GLint size, GLenum type, GLsizei stride,
@@ -59,6 +90,5 @@ void glDrawTriangle(void)
 		return;
 	}
 
-	pipe_ctx->clear(pipe_ctx, 0x282c34);
 	pipe_ctx->draw_vbo(pipe_ctx);
 }

@@ -103,6 +103,7 @@ void vc4_flush(struct pipe_context *pctx)
 
 	vc4->shader_rec_count = 0;
 	vc4->needs_flush = 0;
+	vc4->cleared = 0;
 	vc4->dirty = ~0;
 
 	dump_fbo(vc4);

@@ -185,14 +185,55 @@ static void vc4_draw_vbo(struct pipe_context *pctx)
 	cl_u32(&vc4->bcl, 12); // Maximum index
 }
 
-static void vc4_clear(struct pipe_context *pctx, uint32_t color)
+static uint8_t float_to_ubyte(float f)
+{
+	union fi {
+		float f;
+		int32_t i;
+		uint32_t ui;
+	} tmp;
+
+	tmp.f = f;
+	if (tmp.i < 0) {
+		return (uint8_t)0;
+	} else if (tmp.i >= 0x3f800000 /* 1.0f */) {
+		return (uint8_t)255;
+	} else {
+		tmp.f = tmp.f * (255.0f / 256.0f) + 32768.0f;
+		return (uint8_t)tmp.i;
+	}
+}
+
+static uint32_t pack_rgba(const float *rgba)
+{
+	uint8_t r = float_to_ubyte(rgba[0]);
+	uint8_t g = float_to_ubyte(rgba[1]);
+	uint8_t b = float_to_ubyte(rgba[2]);
+	uint8_t a = float_to_ubyte(rgba[3]);
+	return (a << 24) | (b << 16) | (g << 8) | r;
+}
+
+static void vc4_clear(struct pipe_context *pctx, unsigned buffers,
+		      const union pipe_color_union *color, double depth,
+		      unsigned stencil)
 {
 	struct vc4_context *vc4 = vc4_context(pctx);
 
-	vc4->clear_color[0] = vc4->clear_color[1] = color;
-	vc4->clear_depth = 0;
-	vc4->clear_stencil = 0;
-	vc4->cleared |= 1;
+	if (buffers & PIPE_CLEAR_COLOR0) {
+		uint32_t clear_color;
+		clear_color = pack_rgba(color->f);
+		vc4->clear_color[0] = vc4->clear_color[1] = clear_color;
+	}
+
+	if (buffers & PIPE_CLEAR_DEPTHSTENCIL) {
+		if (buffers & PIPE_CLEAR_DEPTH)
+			vc4->clear_depth =
+				depth == 1.0 ?
+					0xffffff :
+					(uint32_t)(depth * 0xffffff + 0.5f);
+		if (buffers & PIPE_CLEAR_STENCIL)
+			vc4->clear_stencil = stencil;
+	}
 
 	vc4_init_context_fbo(vc4);
 
@@ -200,6 +241,7 @@ static void vc4_clear(struct pipe_context *pctx, uint32_t color)
 	vc4->draw_min_y = 0;
 	vc4->draw_max_x = vc4->framebuffer.width;
 	vc4->draw_max_y = vc4->framebuffer.height;
+	vc4->cleared |= buffers;
 
 	vc4_start_draw(vc4);
 }

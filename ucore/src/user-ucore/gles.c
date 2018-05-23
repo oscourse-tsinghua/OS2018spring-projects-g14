@@ -3,11 +3,12 @@
 
 void init()
 {
-
+	glClearColor(0.64f, 0.81f, 0.38f, 1.0f);
 }
 
 void draw()
 {
+	glClear(GL_COLOR_BUFFER_BIT);
 	glDrawTriangle();
 	glFlush();
 }

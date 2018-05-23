@@ -5,6 +5,7 @@
 #include <unistd.h>
 
 #include <EGL/egl.h>
+#include <GLES/gl.h>
 
 #include "pipe/p_state.h"
 #include "pipe/p_context.h"
@@ -12,6 +13,22 @@
 static int gpu_fd = 0;
 
 extern struct pipe_context *pipe_ctx;
+
+static void initContext(EGLDisplay dpy, EGLContext ctx)
+{
+	struct pipe_context *pctx = (struct pipe_context *)ctx;
+	struct pipe_framebuffer_state *framebuffer =
+		(struct pipe_framebuffer_state *)dpy;
+
+	struct pipe_clear_state *clear_state = &pctx->clear_state;
+	clear_state->buffers = 0;
+	clear_state->depth = 1.0;
+	clear_state->stencil = 0;
+	memset(clear_state->color, 0, sizeof(union pipe_color_union));
+
+	glViewport(0, 0, framebuffer->width, framebuffer->height);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BITS | GL_STENCIL_BITS);
+}
 
 EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id)
 {
@@ -86,10 +103,8 @@ EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLContext ctx)
 	}
 
 	pipe_ctx = (struct pipe_context *)ctx;
-	struct pipe_framebuffer_state *framebuffer;
-	framebuffer = (struct pipe_framebuffer_state *)dpy;
 
-	glViewport(0, 0, framebuffer->width, framebuffer->height);
+	initContext(dpy, ctx);
 
 	return 1;
 }
