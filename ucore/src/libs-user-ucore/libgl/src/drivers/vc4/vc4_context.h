@@ -8,6 +8,33 @@
 #include "vc4_cl.h"
 #include "vc4_bufmgr.h"
 
+#define VC4_DIRTY_BLEND         (1 <<  0)
+#define VC4_DIRTY_RASTERIZER    (1 <<  1)
+#define VC4_DIRTY_ZSA           (1 <<  2)
+#define VC4_DIRTY_FRAGTEX       (1 <<  3)
+#define VC4_DIRTY_VERTTEX       (1 <<  4)
+
+#define VC4_DIRTY_BLEND_COLOR   (1 <<  7)
+#define VC4_DIRTY_STENCIL_REF   (1 <<  8)
+#define VC4_DIRTY_SAMPLE_MASK   (1 <<  9)
+#define VC4_DIRTY_FRAMEBUFFER   (1 << 10)
+#define VC4_DIRTY_STIPPLE       (1 << 11)
+#define VC4_DIRTY_VIEWPORT      (1 << 12)
+#define VC4_DIRTY_CONSTBUF      (1 << 13)
+#define VC4_DIRTY_VTXSTATE      (1 << 14)
+#define VC4_DIRTY_VTXBUF        (1 << 15)
+
+#define VC4_DIRTY_SCISSOR       (1 << 17)
+#define VC4_DIRTY_FLAT_SHADE_FLAGS (1 << 18)
+#define VC4_DIRTY_PRIM_MODE     (1 << 19)
+#define VC4_DIRTY_CLIP          (1 << 20)
+#define VC4_DIRTY_UNCOMPILED_VS (1 << 21)
+#define VC4_DIRTY_UNCOMPILED_FS (1 << 22)
+#define VC4_DIRTY_COMPILED_CS   (1 << 23)
+#define VC4_DIRTY_COMPILED_VS   (1 << 24)
+#define VC4_DIRTY_COMPILED_FS   (1 << 25)
+#define VC4_DIRTY_FS_INPUTS     (1 << 26)
+
 struct vc4_program_stateobj {
 	struct vc4_bo *vs, *fs;
 };
@@ -64,6 +91,9 @@ struct vc4_context {
 	 * DRM_IOCTL_VC4_SUBMIT_CL.
 	 */
 	bool needs_flush;
+
+	/** bitfield of VC4_DIRTY_* */
+	uint32_t dirty;
 
 	struct vc4_program_stateobj prog;
 	struct vc4_bo *uniforms;

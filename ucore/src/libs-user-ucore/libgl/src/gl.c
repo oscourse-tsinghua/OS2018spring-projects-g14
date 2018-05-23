@@ -26,6 +26,7 @@ GL_API void GL_APIENTRY glDrawElements(GLenum mode, GLsizei count, GLenum type,
 
 GL_API void GL_APIENTRY glFlush(void)
 {
+	pipe_ctx->flush(pipe_ctx);
 }
 
 GL_API void GL_APIENTRY glVertexPointer(GLint size, GLenum type, GLsizei stride,
@@ -37,10 +38,18 @@ GL_API void GL_APIENTRY glViewport(GLint x, GLint y, GLsizei width,
 				   GLsizei height)
 {
 	struct pipe_viewport_state viewport;
-	viewport.x = x;
-	viewport.y = y;
-	viewport.width = width;
-	viewport.height = height;
+	float half_width = 0.5f * width;
+	float half_height = 0.5f * height;
+	double n = 0;
+	double f = 1;
+
+	viewport.scale[0] = half_width;
+	viewport.translate[0] = half_width + x;
+	viewport.scale[1] = half_height;
+	viewport.translate[1] = half_height + y;
+	viewport.scale[2] = 0.5 * (f - n);
+	viewport.translate[2] = 0.5 * (n + f);
+
 	pipe_ctx->set_viewport_state(pipe_ctx, &viewport);
 }
 

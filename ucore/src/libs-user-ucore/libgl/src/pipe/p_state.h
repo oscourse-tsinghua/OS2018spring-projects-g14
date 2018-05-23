@@ -4,8 +4,8 @@
 #include <types.h>
 
 struct pipe_viewport_state {
-	int x, y;
-	int width, height;
+	float scale[3];
+	float translate[3];
 };
 
 struct pipe_framebuffer_state {

@@ -34,6 +34,14 @@ void vc4_flush(struct pipe_context *pctx)
 	if (!vc4->needs_flush)
 		return;
 
+	/* The RCL setup would choke if the draw bounds cause no drawing, so
+	 * just drop the drawing if that's the case.
+	 */
+	if (vc4->draw_max_x <= vc4->draw_min_x ||
+	    vc4->draw_max_y <= vc4->draw_min_y) {
+		return;
+	}
+
 	struct drm_vc4_submit_cl submit;
 	memset(&submit, 0, sizeof(submit));
 
@@ -92,9 +100,10 @@ void vc4_flush(struct pipe_context *pctx)
 	vc4_reset_cl(&vc4->bcl);
 	vc4_reset_cl(&vc4->shader_rec);
 	vc4_reset_cl(&vc4->bo_handles);
-	vc4->shader_rec_count = 0;
 
+	vc4->shader_rec_count = 0;
 	vc4->needs_flush = 0;
+	vc4->dirty = ~0;
 
 	dump_fbo(vc4);
 }
@@ -156,6 +165,7 @@ static struct pipe_context *vc4_context_create(int fd)
 	vc4->draw_min_y = ~0;
 	vc4->draw_max_x = 0;
 	vc4->draw_max_y = 0;
+	vc4->dirty = ~0;
 
 	return pctx;
 }

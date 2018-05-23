@@ -86,6 +86,10 @@ EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLContext ctx)
 	}
 
 	pipe_ctx = (struct pipe_context *)ctx;
+	struct pipe_framebuffer_state *framebuffer;
+	framebuffer = (struct pipe_framebuffer_state *)dpy;
+
+	glViewport(0, 0, framebuffer->width, framebuffer->height);
 
 	return 1;
 }

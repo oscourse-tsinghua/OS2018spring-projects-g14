@@ -1,6 +1,17 @@
 #include <EGL/egl.h>
 #include <GLES/gl.h>
 
+void init()
+{
+
+}
+
+void draw()
+{
+	glDrawTriangle();
+	glFlush();
+}
+
 int main(int argc, char *argv[])
 {
 	cprintf("Hello GLES!!!\n");
@@ -12,7 +23,9 @@ int main(int argc, char *argv[])
 		return 1;
 	}
 
-	glDrawTriangle();
+	init();
+
+	draw();
 
 	eglDestroyContext(dpy, ctx);
 

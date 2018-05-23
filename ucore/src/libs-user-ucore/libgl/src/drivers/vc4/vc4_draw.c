@@ -51,8 +51,8 @@ static struct vc4_bo *get_vbo(struct vc4_context *vc4)
 	float sqrt3 = 1.7320508075688772f;
 	float sqrt6 = 2.449489742783178;
 	int size = 600;
-	uint32_t center_x = (vc4->draw_max_x + vc4->draw_min_x) / 2;
-	uint32_t center_y = (vc4->draw_max_y + vc4->draw_min_y) / 2;
+	int center_x = 0;
+	int center_y = 0;
 	float x0 = center_x - size / 2, y0 = center_y + sqrt3 / 6 * size,
 	      z0 = 1;
 	float x1 = x0 + size / 2, y1 = y0 - sqrt3 / 2 * size, z1 = z0;
@@ -139,33 +139,13 @@ static void vc4_init_context_fbo(struct vc4_context *vc4)
 		ROUNDUP_DIV(vc4->framebuffer.height, vc4->tile_height);
 }
 
-static void vc4_draw_vbo(struct pipe_context *pctx)
+static void vc4_emit_nv_shader_state(struct vc4_context *vc4)
 {
-	struct vc4_context *vc4 = vc4_context(pctx);
-
-	vc4_init_context_fbo(vc4);
-
-	vc4_start_draw(vc4);
-
-	vc4_emit_state(vc4);
-
-	struct vc4_bo *ibo = get_ibo(vc4);
 	struct vc4_bo *vbo = get_vbo(vc4);
 
 	cl_u8(&vc4->bcl, VC4_PACKET_NV_SHADER_STATE);
 	cl_u32(&vc4->bcl, 0); // offset into shader_rec
 
-	uint32_t mode = 4;
-	uint32_t index_size = 1;
-	cl_start_reloc(&vc4->bcl, 1);
-	cl_u8(&vc4->bcl, VC4_PACKET_GL_INDEXED_PRIMITIVE);
-	cl_u8(&vc4->bcl, mode | (index_size == 2 ? VC4_INDEX_BUFFER_U16 :
-						   VC4_INDEX_BUFFER_U8));
-	cl_u32(&vc4->bcl, 12); // Length
-	cl_reloc(&vc4->bcl, vc4, ibo, 0);
-	cl_u32(&vc4->bcl, 12); // Maximum index
-
-	// Shader Record
 	cl_start_shader_reloc(&vc4->shader_rec, 3);
 	cl_u8(&vc4->shader_rec, 0);
 	cl_u8(&vc4->shader_rec, sizeof(struct shaded_vertex)); // stride
@@ -176,8 +156,33 @@ static void vc4_draw_vbo(struct pipe_context *pctx)
 	cl_reloc(&vc4->shader_rec, vc4, vbo, 0);
 
 	vc4->shader_rec_count++;
+}
 
-	vc4_flush(pctx);
+static void vc4_draw_vbo(struct pipe_context *pctx)
+{
+	struct vc4_context *vc4 = vc4_context(pctx);
+
+	vc4_init_context_fbo(vc4);
+
+	vc4_start_draw(vc4);
+
+	vc4_emit_state(vc4);
+
+	vc4_emit_nv_shader_state(vc4);
+
+	vc4->dirty = 0;
+
+	struct vc4_bo *ibo = get_ibo(vc4);
+
+	uint32_t mode = 4;
+	uint32_t index_size = 1;
+	cl_start_reloc(&vc4->bcl, 1);
+	cl_u8(&vc4->bcl, VC4_PACKET_GL_INDEXED_PRIMITIVE);
+	cl_u8(&vc4->bcl, mode | (index_size == 2 ? VC4_INDEX_BUFFER_U16 :
+						   VC4_INDEX_BUFFER_U8));
+	cl_u32(&vc4->bcl, 12); // Length
+	cl_reloc(&vc4->bcl, vc4, ibo, 0);
+	cl_u32(&vc4->bcl, 12); // Maximum index
 }
 
 static void vc4_clear(struct pipe_context *pctx, uint32_t color)

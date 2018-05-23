@@ -6,6 +6,7 @@ static void vc4_set_framebuffer_state(
 {
 	struct vc4_context *vc4 = vc4_context(pctx);
 	vc4->framebuffer = *framebuffer;
+	vc4->dirty |= VC4_DIRTY_FRAMEBUFFER;
 }
 
 static void vc4_set_viewport_state(struct pipe_context *pctx,
@@ -13,6 +14,7 @@ static void vc4_set_viewport_state(struct pipe_context *pctx,
 {
 	struct vc4_context *vc4 = vc4_context(pctx);
 	vc4->viewport = *viewport;
+	vc4->dirty |= VC4_DIRTY_VIEWPORT;
 }
 
 void vc4_state_init(struct pipe_context *pctx)
