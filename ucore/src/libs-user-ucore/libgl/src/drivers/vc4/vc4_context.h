@@ -101,6 +101,8 @@ struct vc4_context {
 	struct pipe_framebuffer_state framebuffer;
 
 	struct pipe_viewport_state viewport;
+
+	list_entry_t bo_list;
 };
 
 static inline struct vc4_context *vc4_context(struct pipe_context *pctx)

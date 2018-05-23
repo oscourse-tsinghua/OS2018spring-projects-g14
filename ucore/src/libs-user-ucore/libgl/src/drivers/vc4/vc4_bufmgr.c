@@ -28,15 +28,19 @@ struct vc4_bo *vc4_bo_alloc(struct vc4_context *vc4, size_t size)
 		return NULL;
 	}
 
+	bo->vc4 = vc4;
 	bo->size = size;
 	bo->handle = create.handle;
 
-	cl_u32(&vc4->bo_pointers, (uintptr_t)bo);
+	vc4_bo_reference_init(bo, 1);
+
+	list_init(&bo->bo_link);
+	list_add_before(&vc4->bo_list, &bo->bo_link);
 
 	return bo;
 }
 
-void vc4_bo_free(struct vc4_context *vc4, struct vc4_bo *bo)
+void vc4_bo_free(struct vc4_bo *bo)
 {
 	int ret;
 
@@ -52,7 +56,7 @@ void vc4_bo_free(struct vc4_context *vc4, struct vc4_bo *bo)
 	memset(&f, 0, sizeof(f));
 
 	f.handle = bo->handle;
-	ret = ioctl(vc4->fd, DRM_IOCTL_VC4_FREE_BO, &f);
+	ret = ioctl(bo->vc4->fd, DRM_IOCTL_VC4_FREE_BO, &f);
 	if (ret != 0) {
 		cprintf("GLES: free bo ioctl failure: %e.\n", ret);
 	}
@@ -60,7 +64,7 @@ void vc4_bo_free(struct vc4_context *vc4, struct vc4_bo *bo)
 	free(bo);
 }
 
-void *vc4_bo_map(struct vc4_context *vc4, struct vc4_bo *bo)
+void *vc4_bo_map(struct vc4_bo *bo)
 {
 	int ret;
 
@@ -75,7 +79,7 @@ void *vc4_bo_map(struct vc4_context *vc4, struct vc4_bo *bo)
 	memset(&map, 0, sizeof(map));
 
 	map.handle = bo->handle;
-	ret = ioctl(vc4->fd, DRM_IOCTL_VC4_MMAP_BO, &map);
+	ret = ioctl(bo->vc4->fd, DRM_IOCTL_VC4_MMAP_BO, &map);
 	if (ret != 0) {
 		cprintf("GLES: map ioctl failure: %e.\n", ret);
 		return NULL;

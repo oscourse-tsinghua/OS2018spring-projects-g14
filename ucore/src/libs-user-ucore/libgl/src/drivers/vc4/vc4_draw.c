@@ -46,7 +46,7 @@ static struct vc4_bo *get_vbo(struct vc4_context *vc4)
 	struct vc4_bo *bo;
 	void *map;
 	bo = vc4_bo_alloc(vc4, sizeof(struct shaded_vertex) * 12);
-	map = vc4_bo_map(vc4, bo);
+	map = vc4_bo_map(bo);
 
 	float sqrt3 = 1.7320508075688772f;
 	float sqrt6 = 2.449489742783178;
@@ -83,7 +83,7 @@ static struct vc4_bo *get_ibo(struct vc4_context *vc4)
 	void *map;
 
 	bo = vc4_bo_alloc(vc4, sizeof(indices));
-	map = vc4_bo_map(vc4, bo);
+	map = vc4_bo_map(bo);
 	memcpy(map, indices, sizeof(indices));
 
 	return bo;
@@ -156,6 +156,7 @@ static void vc4_emit_nv_shader_state(struct vc4_context *vc4)
 	cl_reloc(&vc4->shader_rec, vc4, vbo, 0);
 
 	vc4->shader_rec_count++;
+	vc4_bo_unreference(vbo);
 }
 
 static void vc4_draw_vbo(struct pipe_context *pctx)
@@ -183,6 +184,8 @@ static void vc4_draw_vbo(struct pipe_context *pctx)
 	cl_u32(&vc4->bcl, 12); // Length
 	cl_reloc(&vc4->bcl, vc4, ibo, 0);
 	cl_u32(&vc4->bcl, 12); // Maximum index
+
+	vc4_bo_unreference(ibo);
 }
 
 static uint8_t float_to_ubyte(float f)

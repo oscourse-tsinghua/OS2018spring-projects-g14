@@ -60,6 +60,9 @@ free_mem:
 
 void vc4_bo_destroy(struct device *dev, struct vc4_bo *bo)
 {
+	kprintf("vc4_bo_destroy: %08x %08x %08x %08x\n", bo->size, bo->handle,
+		bo->paddr, bo->vaddr);
+
 	__ucore_iounmap(bo->vaddr, bo->size);
 	mbox_mem_unlock(bo->handle);
 	mbox_mem_free(bo->handle);

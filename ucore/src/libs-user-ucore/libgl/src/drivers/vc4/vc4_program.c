@@ -20,7 +20,7 @@ static int vc4_create_fs(struct pipe_context *pctx)
 	};
 
 	struct vc4_bo *fs = vc4_bo_alloc(vc4, sizeof(ins));
-	void *map = vc4_bo_map(vc4, fs);
+	void *map = vc4_bo_map(fs);
 	if (map == NULL) {
 		return -E_NOMEM;
 	}

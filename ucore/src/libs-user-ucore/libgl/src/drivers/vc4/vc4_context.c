@@ -27,6 +27,25 @@ static void dump_fbo(struct vc4_context *vc4)
 	}
 }
 
+static void vc4_clear_context(struct vc4_context *vc4)
+{
+	int i;
+	struct vc4_bo **referenced_bos = vc4->bo_pointers.base;
+	for (i = 0; i < cl_offset(&vc4->bo_handles) / 4; i++) {
+		vc4_bo_unreference(referenced_bos[i]);
+	}
+
+	vc4_reset_cl(&vc4->bcl);
+	vc4_reset_cl(&vc4->shader_rec);
+	vc4_reset_cl(&vc4->bo_handles);
+	vc4_reset_cl(&vc4->bo_pointers);
+
+	vc4->shader_rec_count = 0;
+	vc4->needs_flush = 0;
+	vc4->cleared = 0;
+	vc4->dirty = ~0;
+}
+
 void vc4_flush(struct pipe_context *pctx)
 {
 	struct vc4_context *vc4 = vc4_context(pctx);
@@ -97,14 +116,7 @@ void vc4_flush(struct pipe_context *pctx)
 		cprintf("GLES: submit failed: %e.\n", ret);
 	}
 
-	vc4_reset_cl(&vc4->bcl);
-	vc4_reset_cl(&vc4->shader_rec);
-	vc4_reset_cl(&vc4->bo_handles);
-
-	vc4->shader_rec_count = 0;
-	vc4->needs_flush = 0;
-	vc4->cleared = 0;
-	vc4->dirty = ~0;
+	vc4_clear_context(vc4);
 
 	dump_fbo(vc4);
 }
@@ -115,10 +127,11 @@ void vc4_context_destroy(struct pipe_context *pctx)
 
 	vc4_flush(pctx);
 
-	int i;
-	struct vc4_bo **referenced_bos = vc4->bo_pointers.base;
-	for (i = 0; i < cl_offset(&vc4->bo_pointers) / 4; i++) {
-		vc4_bo_free(vc4, referenced_bos[i]);
+	while (!list_empty(&vc4->bo_list)) {
+		list_entry_t *le = list_next(&vc4->bo_list);
+		struct vc4_bo *bo = le2bo(le, bo_link);
+		list_del(&bo->bo_link);
+		vc4_bo_free(bo);
 	}
 
 	if (vc4->bcl.base) {
@@ -167,6 +180,8 @@ static struct pipe_context *vc4_context_create(int fd)
 	vc4->draw_max_x = 0;
 	vc4->draw_max_y = 0;
 	vc4->dirty = ~0;
+
+	list_init(&vc4->bo_list);
 
 	return pctx;
 }
