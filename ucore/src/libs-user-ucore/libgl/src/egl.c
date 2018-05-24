@@ -10,7 +10,9 @@
 #include "pipe/p_state.h"
 #include "pipe/p_context.h"
 
+static int fb_fd = 0;
 static int gpu_fd = 0;
+static struct fb_var_screeninfo var;
 
 extern struct pipe_context *pipe_ctx;
 
@@ -29,16 +31,15 @@ static void initContext(EGLDisplay dpy, EGLContext ctx)
 	pctx->current_color =
 		(union pipe_color_union){ 1.0f, 1.0f, 1.0f, 1.0f };
 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BITS | GL_STENCIL_BITS);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 	glViewport(0, 0, framebuffer->width, framebuffer->height);
 }
 
 EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id)
 {
-	struct fb_var_screeninfo var;
 	struct pipe_framebuffer_state *framebuffer;
 
-	int fb_fd = open("fb0:", O_RDWR);
+	fb_fd = open("fb0:", O_RDWR);
 	int ret = 0;
 
 	if (fb_fd == 0) {
@@ -50,10 +51,11 @@ EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id)
 		goto out;
 	}
 
-	uint32_t size = var.xres * var.yres * var.bits_per_pixel >> 3;
+	uint32_t size =
+		var.xres_virtual * var.yres_virtual * var.bits_per_pixel >> 3;
 
 	void *buf = (void *)sys_linux_mmap(0, size, fb_fd, 0);
-	if (buf == EGL_NO_DISPLAY) {
+	if (buf == NULL) {
 		cprintf("GLES: fb mmap error\n");
 		ret = -E_NOMEM;
 		goto out;
@@ -67,10 +69,10 @@ EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id)
 	framebuffer->width = var.xres;
 	framebuffer->height = var.yres;
 	framebuffer->bits_per_pixel = var.bits_per_pixel;
+	framebuffer->offset = 0;
 	framebuffer->screen_base = buf;
 
 out:
-	close(fb_fd);
 	return ret ? EGL_NO_DISPLAY : framebuffer;
 }
 
@@ -130,6 +132,30 @@ EGLBoolean eglDestroyContext(EGLDisplay dpy, EGLContext ctx)
 	if (gpu_fd) {
 		close(gpu_fd);
 	}
+	if (fb_fd) {
+		close(fb_fd);
+	}
+
+	return 1;
+}
+
+EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLContext ctx)
+{
+	struct pipe_context *pctx = (struct pipe_context *)ctx;
+	struct pipe_framebuffer_state *framebuffer;
+	framebuffer = (struct pipe_framebuffer_state *)dpy;
+	int ret = 0;
+
+	uint32_t offset = framebuffer->offset;
+	offset = var.xres * var.yres * (var.bits_per_pixel >> 3) - offset;
+
+	var.yoffset = offset;
+	if ((ret = ioctl(fb_fd, FBIOPAN_DISPLAY, &var))) {
+		return 0;
+	}
+
+	framebuffer->offset = offset;
+	pctx->set_framebuffer_state(pctx, framebuffer);
 
 	return 1;
 }

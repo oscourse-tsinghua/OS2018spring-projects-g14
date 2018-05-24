@@ -8,6 +8,7 @@
 struct pipe_framebuffer_state {
 	uint32_t width, height;
 	uint32_t bits_per_pixel;
+	uint32_t offset;
 	void *screen_base;
 };
 

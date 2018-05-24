@@ -177,5 +177,6 @@ struct fb_alloc_tags {
 int mbox_framebuffer_get_physical_size(uint32_t *width, uint32_t *height);
 int mbox_framebuffer_get_depth(uint32_t *depth);
 int mbox_framebuffer_alloc(struct fb_alloc_tags *fb_info);
+int mbox_framebuffer_set_virtual_offset(uint32_t xoffset, uint32_t yoffset);
 
 #endif // RASPBERRYPI_MAILBOX_PROPERTY_H

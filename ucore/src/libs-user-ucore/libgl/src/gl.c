@@ -198,7 +198,11 @@ GL_API void GL_APIENTRY glFlush(void)
 
 GL_API GLenum GL_APIENTRY glGetError(void)
 {
-	return pipe_ctx->last_error;
+	if (!pipe_ctx) {
+		return GL_NO_ERROR;
+	} else {
+		return pipe_ctx->last_error;
+	}
 }
 
 GL_API void GL_APIENTRY glVertexPointer(GLint size, GLenum type, GLsizei stride,

@@ -140,3 +140,11 @@ int mbox_framebuffer_alloc(struct fb_alloc_tags *fb_info)
 	int ret = mbox_property_list(fb_info, sizeof(struct fb_alloc_tags));
 	return ret;
 }
+
+int mbox_framebuffer_set_virtual_offset(uint32_t xoffset, uint32_t yoffset)
+{
+	uint32_t data[2] = { xoffset, yoffset };
+	int ret = mbox_property(RPI_FIRMWARE_FRAMEBUFFER_SET_VIRTUAL_OFFSET,
+				data, sizeof(data));
+	return ret;
+}

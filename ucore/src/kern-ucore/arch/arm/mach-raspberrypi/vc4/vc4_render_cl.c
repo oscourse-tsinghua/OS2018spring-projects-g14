@@ -107,7 +107,7 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 	}
 
 	cl_u8(setup, VC4_PACKET_TILE_RENDERING_MODE_CONFIG);
-	cl_u32(setup, vc4->fb->fb_bus_address);
+	cl_u32(setup, vc4->fb->fb_bus_address + args->color_write.offset);
 	cl_u16(setup, args->width);
 	cl_u16(setup, args->height);
 	cl_u16(setup, args->color_write.bits);

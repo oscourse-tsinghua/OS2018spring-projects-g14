@@ -17,7 +17,7 @@ static void dump_fbo(struct vc4_context *vc4)
 			uint32_t addr =
 				((y + center_y) * fb->width + (x + center_x)) *
 				bytes_per_pixel;
-			char *ptr = fb->screen_base + addr;
+			char *ptr = fb->screen_base + fb->offset + addr;
 			int k;
 			for (k = bytes_per_pixel - 1; k >= 0; k--)
 				cprintf("%02x", *(ptr + k));
@@ -70,8 +70,11 @@ void vc4_flush(struct pipe_context *pctx)
 		cl_u8(&vc4->bcl, VC4_PACKET_FLUSH);
 	}
 
+	struct pipe_framebuffer_state *fb = &vc4->framebuffer;
+	submit.color_write.offset =
+		fb->width * fb->height * (fb->bits_per_pixel >> 3) - fb->offset;
 	submit.color_write.bits =
-		VC4_SET_FIELD(vc4->framebuffer.bits_per_pixel == 16 ?
+		VC4_SET_FIELD(fb->bits_per_pixel == 16 ?
 				      VC4_RENDER_CONFIG_FORMAT_BGR565 :
 				      VC4_RENDER_CONFIG_FORMAT_RGBA8888,
 			      VC4_RENDER_CONFIG_FORMAT) |
@@ -118,7 +121,7 @@ void vc4_flush(struct pipe_context *pctx)
 
 	vc4_clear_context(vc4);
 
-	dump_fbo(vc4);
+	// dump_fbo(vc4);
 }
 
 void vc4_context_destroy(struct pipe_context *pctx)

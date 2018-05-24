@@ -1,6 +1,9 @@
 #include <EGL/egl.h>
 #include <GLES/gl.h>
 
+EGLDisplay dpy;
+EGLDisplay ctx;
+
 static GLfloat vertexs[] = {
 	-0.5, -0.5,
 	0.5, -0.5,
@@ -26,8 +29,16 @@ void init()
 	glClearColor(0.64f, 0.81f, 0.38f, 1.0f);
 }
 
+GLfloat u = 0.01, v = 0.01;
+
 void draw()
 {
+	int i;
+	for (i = 0; i < 12; i += 2) {
+		vertexs[i] += u;
+		vertexs[i + 1] += v;
+	}
+
 	glClear(GL_COLOR_BUFFER_BIT);
 
 	glVertexPointer(2, GL_FLOAT, 0, vertexs);
@@ -44,15 +55,20 @@ void draw()
 	glViewport(960, 540, 960, 540);
 	glDrawArrays(GL_TRIANGLES, 3, 3);
 
+	glDisableClientState(GL_COLOR_ARRAY);
+	glDisableClientState(GL_VERTEX_ARRAY);
+
 	glFlush();
+
+	eglSwapBuffers(dpy, ctx);
 }
 
 int main(int argc, char *argv[])
 {
 	cprintf("Hello GLES!!!\n");
 
-	EGLDisplay dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-	EGLContext ctx = eglCreateContext(dpy);
+	dpy = eglGetDisplay(EGL_DEFAULT_DISPLAY);
+	ctx = eglCreateContext(dpy);
 
 	if (!eglMakeCurrent(dpy, ctx)) {
 		return 1;
@@ -60,7 +76,9 @@ int main(int argc, char *argv[])
 
 	init();
 
-	draw();
+	int i;
+	for (i = 0; i < 100; i++)
+		draw();
 
 	eglDestroyContext(dpy, ctx);
 

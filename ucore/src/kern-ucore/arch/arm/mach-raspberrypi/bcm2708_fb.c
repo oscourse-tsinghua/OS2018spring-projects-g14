@@ -29,6 +29,27 @@ struct fb_info *get_fb_info(void)
 	return bcm2708_fb;
 }
 
+static int bcm2708_fb_pan_display(struct fb_var_screeninfo *var)
+{
+	if (fb_check() == 0)
+		return;
+
+	struct fb_info *fb = get_fb_info();
+	int ret;
+
+	ret = mbox_framebuffer_set_virtual_offset(var->xoffset, var->yoffset);
+	if (ret != 0) {
+		kprintf("BCM2708FB: bcm2708_fb_pan_display(%d,%d) returns=%d\n",
+			var->xoffset, var->yoffset, ret);
+		return ret;
+	}
+
+	fb->var.xoffset = var->xoffset;
+	fb->var.yoffset = var->yoffset;
+
+	return ret;
+}
+
 static int bcm2708_fb_probe(struct device *dev)
 {
 	int ret;
@@ -62,7 +83,7 @@ static int bcm2708_fb_probe(struct device *dev)
 		.tag2 = { RPI_FIRMWARE_FRAMEBUFFER_SET_VIRTUAL_WIDTH_HEIGHT,
 			  8, 0, },
 			.xres_virtual = width,
-			.yres_virtual = height,
+			.yres_virtual = height * 2,
 		.tag3 = { RPI_FIRMWARE_FRAMEBUFFER_SET_DEPTH, 4, 0 },
 			.bpp = depth,
 		.tag4 = { RPI_FIRMWARE_FRAMEBUFFER_SET_VIRTUAL_OFFSET, 8, 0 },
@@ -75,7 +96,7 @@ static int bcm2708_fb_probe(struct device *dev)
 			.pitch = 0,
 	};
 
-	ret = mbox_property_list(&fbinfo, sizeof(fbinfo));
+	ret = mbox_framebuffer_alloc(&fbinfo);
 	if (ret != 0) {
 		kprintf("BCM2708FB: cannot allocate GPU framebuffer.");
 		goto free_fb;
@@ -225,6 +246,13 @@ static int do_fb_ioctl(struct fb_info *info, int op, void *data)
 	case FBIOGET_FSCREENINFO:
 		fix = info->fix;
 		ret = copy_to_user(mm, data, &fix, sizeof(fix)) ? 0 : -E_FAULT;
+		break;
+	case FBIOPAN_DISPLAY:
+		ret = copy_from_user(mm, &var, data, sizeof(var), 0) ? 0 :
+								       -E_FAULT;
+		if (ret == 0) {
+			bcm2708_fb_pan_display(&var);
+		}
 		break;
 	default:
 		ret = -E_INVAL;

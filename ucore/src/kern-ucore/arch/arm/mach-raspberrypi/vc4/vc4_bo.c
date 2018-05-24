@@ -48,8 +48,8 @@ struct vc4_bo *vc4_bo_create(struct device *dev, size_t size)
 	bo->vaddr = (void *)bus_addr;
 	list_init(&bo->unref_head);
 
-	kprintf("vc4_bo_create: %08x %08x %08x %08x\n", bo->size, bo->handle,
-		bo->paddr, bo->vaddr);
+	// kprintf("vc4_bo_create: %08x %08x %08x %08x\n", bo->size, bo->handle,
+	// 	bo->paddr, bo->vaddr);
 
 	return bo;
 
@@ -60,8 +60,8 @@ free_mem:
 
 void vc4_bo_destroy(struct device *dev, struct vc4_bo *bo)
 {
-	kprintf("vc4_bo_destroy: %08x %08x %08x %08x\n", bo->size, bo->handle,
-		bo->paddr, bo->vaddr);
+	// kprintf("vc4_bo_destroy: %08x %08x %08x %08x\n", bo->size, bo->handle,
+	// 	bo->paddr, bo->vaddr);
 
 	__ucore_iounmap(bo->vaddr, bo->size);
 	mbox_mem_unlock(bo->handle);
