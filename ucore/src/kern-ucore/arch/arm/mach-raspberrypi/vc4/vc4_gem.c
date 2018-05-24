@@ -117,11 +117,7 @@ static int vc4_cl_lookup_bos(struct device *dev, struct vc4_exec_info *exec)
 	exec->bo_count = args->bo_handle_count;
 
 	if (!exec->bo_count) {
-		/* See comment on bo_index for why we have to check
-		 * this.
-		 */
-		kprintf("vc4: Rendering requires BOs to validate\n");
-		return -E_INVAL;
+		return 0;
 	}
 
 	exec->bo = (struct vc4_bo **)kmalloc(exec->bo_count *
@@ -202,13 +198,15 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 	exec->shader_state = temp + exec_size;
 	exec->shader_state_size = args->shader_rec_count;
 
-	if (!copy_from_user(mm, bin, (uintptr_t)args->bin_cl, args->bin_cl_size,
+	if (args->bin_cl_size &&
+	    !copy_from_user(mm, bin, (uintptr_t)args->bin_cl, args->bin_cl_size,
 			    0)) {
 		ret = -E_FAULT;
 		goto fail;
 	}
 
-	if (!copy_from_user(mm, exec->shader_rec_u, (uintptr_t)args->shader_rec,
+	if (args->shader_rec_size &&
+	    !copy_from_user(mm, exec->shader_rec_u, (uintptr_t)args->shader_rec,
 			    args->shader_rec_size, 0)) {
 		ret = -E_FAULT;
 		goto fail;

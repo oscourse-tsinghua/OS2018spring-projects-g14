@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <types.h>
+#include <ulib.h>
 
 #include "vc4_context.h"
 #include "vc4_cl.h"
@@ -159,7 +160,7 @@ static void vc4_emit_nv_shader_state(struct vc4_context *vc4)
 	vc4_bo_unreference(vbo);
 }
 
-static void vc4_draw_vbo(struct pipe_context *pctx)
+static void vc4_draw_vbo(struct pipe_context *pctx, struct pipe_draw_info *info)
 {
 	struct vc4_context *vc4 = vc4_context(pctx);
 
@@ -173,19 +174,31 @@ static void vc4_draw_vbo(struct pipe_context *pctx)
 
 	vc4->dirty = 0;
 
-	struct vc4_bo *ibo = get_ibo(vc4);
+	if (info->index_size) {
+		struct vc4_bo *ibo = get_ibo(vc4);
 
-	uint32_t mode = 4;
-	uint32_t index_size = 1;
-	cl_start_reloc(&vc4->bcl, 1);
-	cl_u8(&vc4->bcl, VC4_PACKET_GL_INDEXED_PRIMITIVE);
-	cl_u8(&vc4->bcl, mode | (index_size == 2 ? VC4_INDEX_BUFFER_U16 :
-						   VC4_INDEX_BUFFER_U8));
-	cl_u32(&vc4->bcl, 12); // Length
-	cl_reloc(&vc4->bcl, vc4, ibo, 0);
-	cl_u32(&vc4->bcl, 12); // Maximum index
+		uint32_t index_size = info->index_size;
+		uint32_t offset = info->start * index_size;
+		assert(index_size == 1 || index_size == 2);
 
-	vc4_bo_unreference(ibo);
+		cl_start_reloc(&vc4->bcl, 1);
+		cl_u8(&vc4->bcl, VC4_PACKET_GL_INDEXED_PRIMITIVE);
+		cl_u8(&vc4->bcl,
+		      info->mode | (index_size == 2 ? VC4_INDEX_BUFFER_U16 :
+						      VC4_INDEX_BUFFER_U8));
+		cl_u32(&vc4->bcl, info->count);
+		cl_reloc(&vc4->bcl, vc4, ibo, offset);
+		cl_u32(&vc4->bcl, vc4->max_index);
+
+		if (info->has_user_indices) {
+			vc4_bo_unreference(ibo);
+		}
+	} else {
+		cl_u8(&vc4->bcl, VC4_PACKET_GL_ARRAY_PRIMITIVE);
+		cl_u8(&vc4->bcl, info->mode);
+		cl_u32(&vc4->bcl, info->count);
+		cl_u32(&vc4->bcl, info->start);
+	}
 }
 
 static uint8_t float_to_ubyte(float f)

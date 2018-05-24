@@ -95,6 +95,9 @@ struct vc4_context {
 	/** bitfield of VC4_DIRTY_* */
 	uint32_t dirty;
 
+	/** Maximum index buffer valid for the current shader_rec. */
+	uint32_t max_index;
+
 	struct vc4_program_stateobj prog;
 	struct vc4_bo *uniforms;
 

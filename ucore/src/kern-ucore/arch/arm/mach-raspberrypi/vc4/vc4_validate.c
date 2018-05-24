@@ -61,6 +61,32 @@ static int validate_indexed_prim_list(VALIDATE_ARGS)
 	return 0;
 }
 
+static int validate_gl_array_primitive(VALIDATE_ARGS)
+{
+	uint32_t length = get_unaligned_32(untrusted + 1);
+	uint32_t base_index = get_unaligned_32(untrusted + 5);
+	uint32_t max_index;
+	struct vc4_shader_state *shader_state;
+
+	/* Check overflow condition */
+	if (exec->shader_state_count == 0) {
+		kprintf("vc4: shader state must precede primitives\n");
+		return -E_INVAL;
+	}
+	shader_state = &exec->shader_state[exec->shader_state_count - 1];
+
+	if (length + base_index < length) {
+		kprintf("vc4: primitive vertex count overflow\n");
+		return -E_INVAL;
+	}
+	max_index = length + base_index - 1;
+
+	if (max_index > shader_state->max_index)
+		shader_state->max_index = max_index;
+
+	return 0;
+}
+
 static int validate_nv_shader_state(VALIDATE_ARGS)
 {
 	uint32_t i = exec->shader_state_count++;
@@ -141,7 +167,7 @@ static const struct cmd_info {
 	VC4_DEFINE_PACKET(VC4_PACKET_GL_INDEXED_PRIMITIVE,
 			  validate_indexed_prim_list),
 	VC4_DEFINE_PACKET(VC4_PACKET_GL_ARRAY_PRIMITIVE,
-			  NULL), // validate_gl_array_primitive
+			  validate_gl_array_primitive),
 
 	VC4_DEFINE_PACKET(VC4_PACKET_PRIMITIVE_LIST_FORMAT, NULL),
 

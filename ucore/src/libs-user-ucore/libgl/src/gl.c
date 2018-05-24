@@ -5,7 +5,6 @@
 #include "pipe/p_context.h"
 
 struct pipe_context *pipe_ctx;
-static GLenum last_error = GL_NO_ERROR;
 
 GL_API void GL_APIENTRY glClearColor(GLfloat red, GLfloat green, GLfloat blue,
 				     GLfloat alpha)
@@ -31,7 +30,7 @@ GL_API void GL_APIENTRY glClear(GLbitfield mask)
 {
 	if (mask & ~(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
 		     GL_STENCIL_BUFFER_BIT)) {
-		last_error = GL_INVALID_VALUE;
+		pipe_ctx->last_error = GL_INVALID_VALUE;
 		return;
 	}
 
@@ -57,9 +56,61 @@ GL_API void GL_APIENTRY glColorPointer(GLint size, GLenum type, GLsizei stride,
 {
 }
 
+GL_API void GL_APIENTRY glDisableClientState(GLenum array)
+{
+	if (array == GL_VERTEX_ARRAY) {
+		pipe_ctx->vertex_pointer_state.enabled = 0;
+	} else if (array == GL_COLOR_ARRAY) {
+		pipe_ctx->color_pointer_state.enabled = 0;
+	} else {
+		pipe_ctx->last_error = GL_INVALID_ENUM;
+	}
+}
+
+GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
+{
+	if (mode < GL_POINTS || mode > GL_TRIANGLE_FAN) {
+		pipe_ctx->last_error = GL_INVALID_ENUM;
+		return;
+	}
+	if (count < 0) {
+		pipe_ctx->last_error = GL_INVALID_VALUE;
+		return;
+	}
+
+	struct pipe_vertex_array_state *vertex_state =
+		&pipe_ctx->vertex_pointer_state;
+	struct pipe_vertex_array_state *color_state =
+		&pipe_ctx->color_pointer_state;
+
+	if (!vertex_state->enabled) {
+		return;
+	}
+
+	struct pipe_draw_info info;
+	memset(&info, 0, sizeof(struct pipe_draw_info));
+
+	info.mode = mode;
+	info.start = first;
+	info.count = count;
+
+	pipe_ctx->draw_vbo(pipe_ctx, &info);
+}
+
 GL_API void GL_APIENTRY glDrawElements(GLenum mode, GLsizei count, GLenum type,
 				       const void *indices)
 {
+}
+
+GL_API void GL_APIENTRY glEnableClientState(GLenum array)
+{
+	if (array == GL_VERTEX_ARRAY) {
+		pipe_ctx->vertex_pointer_state.enabled = 1;
+	} else if (array == GL_COLOR_ARRAY) {
+		pipe_ctx->color_pointer_state.enabled = 1;
+	} else {
+		pipe_ctx->last_error = GL_INVALID_ENUM;
+	}
 }
 
 GL_API void GL_APIENTRY glFlush(void)
@@ -69,19 +120,36 @@ GL_API void GL_APIENTRY glFlush(void)
 
 GL_API GLenum GL_APIENTRY glGetError(void)
 {
-	return last_error;
+	return pipe_ctx->last_error;
 }
 
 GL_API void GL_APIENTRY glVertexPointer(GLint size, GLenum type, GLsizei stride,
 					const void *pointer)
 {
+	if (size != 3) {
+		pipe_ctx->last_error = GL_INVALID_VALUE;
+		return;
+	}
+	if (type != GL_FLOAT) {
+		pipe_ctx->last_error = GL_INVALID_ENUM;
+		return;
+	}
+	if (stride < 0) {
+		pipe_ctx->last_error = GL_INVALID_VALUE;
+		return;
+	}
+
+	struct pipe_vertex_array_state *state = &pipe_ctx->vertex_pointer_state;
+	state->size = size;
+	state->stride = stride;
+	state->pointer = pointer;
 }
 
 GL_API void GL_APIENTRY glViewport(GLint x, GLint y, GLsizei width,
 				   GLsizei height)
 {
 	if (width < 0 || height < 0) {
-		last_error = GL_INVALID_VALUE;
+		pipe_ctx->last_error = GL_INVALID_VALUE;
 		return;
 	}
 
@@ -99,13 +167,4 @@ GL_API void GL_APIENTRY glViewport(GLint x, GLint y, GLsizei width,
 	viewport.translate[2] = 0.5 * (n + f);
 
 	pipe_ctx->set_viewport_state(pipe_ctx, &viewport);
-}
-
-void glDrawTriangle(void)
-{
-	if (pipe_ctx == NULL) {
-		return;
-	}
-
-	pipe_ctx->draw_vbo(pipe_ctx);
 }

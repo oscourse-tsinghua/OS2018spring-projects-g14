@@ -9,7 +9,13 @@ void init()
 void draw()
 {
 	glClear(GL_COLOR_BUFFER_BIT);
-	glDrawTriangle();
+
+	glEnableClientState(GL_VERTEX_ARRAY);
+
+	glDrawArrays(GL_TRIANGLES, 0, 12);
+
+	glDisableClientState(GL_VERTEX_ARRAY);
+
 	glFlush();
 }
 
