@@ -26,6 +26,13 @@ GL_API void GL_APIENTRY glClearStencil(GLint s)
 	pipe_ctx->clear_state.stencil = s;
 }
 
+GL_API void GL_APIENTRY glColor4f(GLfloat red, GLfloat green, GLfloat blue,
+				  GLfloat alpha)
+{
+	pipe_ctx->current_color =
+		(union pipe_color_union){ red, green, blue, alpha };
+}
+
 GL_API void GL_APIENTRY glClear(GLbitfield mask)
 {
 	if (mask & ~(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
@@ -54,6 +61,23 @@ GL_API void GL_APIENTRY glClear(GLbitfield mask)
 GL_API void GL_APIENTRY glColorPointer(GLint size, GLenum type, GLsizei stride,
 				       const void *pointer)
 {
+	if (size != 4) {
+		pipe_ctx->last_error = GL_INVALID_VALUE;
+		return;
+	}
+	if (type != GL_FLOAT) {
+		pipe_ctx->last_error = GL_INVALID_ENUM;
+		return;
+	}
+	if (stride < 0) {
+		pipe_ctx->last_error = GL_INVALID_VALUE;
+		return;
+	}
+
+	struct pipe_vertex_array_state *state = &pipe_ctx->color_pointer_state;
+	state->size = size;
+	state->stride = stride;
+	state->pointer = pointer;
 }
 
 GL_API void GL_APIENTRY glDisableClientState(GLenum array)
@@ -95,6 +119,7 @@ GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
 	uint32_t vertex_stride = vertex_state->stride ?
 					 vertex_state->stride / sizeof(float) :
 					 vertex_state->size;
+	uint32_t color_stride = 0;
 
 	rsc = pipe_ctx->resource_create(pipe_ctx, stride, count);
 	if (rsc == NULL) {
@@ -106,9 +131,16 @@ GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
 		pipe_ctx, rsc);
 
 	int i;
-	float *pointer = (float *)vertex_state->pointer + first * vertex_stride;
-	float *scale = &pipe_ctx->viewport.scale;
-	float *translate = &pipe_ctx->viewport.translate;
+	const float *pointer = (float *)vertex_state->pointer + first * vertex_stride;
+	const float *scale = pipe_ctx->viewport.scale;
+	const float *translate = pipe_ctx->viewport.translate;
+	const float *color = pipe_ctx->current_color.f;
+	if (color_state->enabled) {
+		color_stride = color_state->stride ?
+				       color_state->stride / sizeof(float) :
+				       color_state->size;
+		color = (float*)color_state->pointer + first * color_stride;
+	}
 
 	for (i = 0; i < count; i++, pointer += vertex_stride) {
 		buffer[i] = (struct nv_shaded_vertex){
@@ -116,13 +148,14 @@ GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
 			.y = (int16_t)((pointer[1] * scale[1]) * 16),
 			.z = 0.0,
 			.rhw = 1.0,
-			.r = 1.0,
-			.g = 1.0,
-			.b = 1.0,
+			.r = color[0],
+			.g = color[1],
+			.b = color[2],
 		};
 		if (vertex_state->size == 3) {
 			buffer[i].z = pointer[2] * scale[2] + translate[2];
 		}
+		color += color_stride;
 	};
 
 	memset(&info, 0, sizeof(struct pipe_draw_info));

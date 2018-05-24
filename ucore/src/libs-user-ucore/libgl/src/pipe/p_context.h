@@ -32,6 +32,8 @@ struct pipe_context {
 	struct pipe_clear_state clear_state;
 	struct pipe_vertex_array_state vertex_pointer_state;
 	struct pipe_vertex_array_state color_pointer_state;
+
+	union pipe_color_union current_color;
 	uint32_t last_error;
 
 	void (*destroy)(struct pipe_context *ctx);
