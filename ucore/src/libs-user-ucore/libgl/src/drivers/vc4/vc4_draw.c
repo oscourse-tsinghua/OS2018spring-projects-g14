@@ -6,12 +6,7 @@
 #include "vc4_cl.h"
 #include "vc4_bufmgr.h"
 #include "vc4_packet.h"
-
-struct shaded_vertex {
-	uint16_t x, y;
-	float z, rhw;
-	float r, g, b;
-};
+#include "vc4_resource.h"
 
 static void vc4_get_draw_cl_space(struct vc4_context *vc4, int vert_count)
 {
@@ -25,54 +20,6 @@ static void vc4_get_draw_cl_space(struct vc4_context *vc4, int vert_count)
 
 	cl_ensure_space(&vc4->bo_handles, 20 * sizeof(uint32_t));
 	cl_ensure_space(&vc4->bo_pointers, 20 * sizeof(uintptr_t));
-}
-
-static size_t emit_triangle(void *vaddr, float r, float g, float b, float x1,
-			    float y1, float z1, float x2, float y2, float z2,
-			    float x3, float y3, int z3)
-{
-	struct shaded_vertex verts[] = {
-		{ ((int)x1) << 4, ((int)y1) << 4, z1, 1, r, g, b },
-		{ ((int)x2) << 4, ((int)y2) << 4, z2, 1, r, g, b },
-		{ ((int)x3) << 4, ((int)y3) << 4, z3, 1, r, g, b },
-	};
-
-	memcpy(vaddr, verts, sizeof(verts));
-
-	return sizeof(verts);
-}
-
-static struct vc4_bo *get_vbo(struct vc4_context *vc4)
-{
-	struct vc4_bo *bo;
-	void *map;
-	bo = vc4_bo_alloc(vc4, sizeof(struct shaded_vertex) * 12);
-	map = vc4_bo_map(bo);
-
-	float sqrt3 = 1.7320508075688772f;
-	float sqrt6 = 2.449489742783178;
-	int size = 600;
-	int center_x = 0;
-	int center_y = 0;
-	float x0 = center_x - size / 2, y0 = center_y + sqrt3 / 6 * size,
-	      z0 = 1;
-	float x1 = x0 + size / 2, y1 = y0 - sqrt3 / 2 * size, z1 = z0;
-	float x2 = x0, y2 = y0, z2 = z0;
-	float x3 = x0 + size, y3 = y0, z3 = z0;
-	float x4 = x0 + size / 2, y4 = y0 - sqrt3 / 6 * size,
-	      z4 = z0; // + sqrt6 / 3 * size;
-
-	uint32_t offset = 0;
-	offset += emit_triangle(map + offset, 1, 1, 1, x1, y1 - 10, z1, x2 - 10,
-				y2 + 10, z2, x3 + 10, y3 + 10, z3);
-	offset += emit_triangle(map + offset, 1, 0, 0, x4, y4, z4, x2, y2, z2,
-				x1, y1, z1);
-	offset += emit_triangle(map + offset, 0, 0, 1, x4, y4, z4, x1, y1, z1,
-				x3, y3, z3);
-	offset += emit_triangle(map + offset, 0, 1, 0, x4, y4, z4, x2, y2, z2,
-				x3, y3, z3);
-
-	return bo;
 }
 
 static struct vc4_bo *get_ibo(struct vc4_context *vc4)
@@ -142,22 +89,22 @@ static void vc4_init_context_fbo(struct vc4_context *vc4)
 
 static void vc4_emit_nv_shader_state(struct vc4_context *vc4)
 {
-	struct vc4_bo *vbo = get_vbo(vc4);
+	struct pipe_vertex_buffer *vb = &vc4->vertexbuf;
+	struct vc4_resource *rsc = vc4_resource(vb->buffer.resource);
 
 	cl_u8(&vc4->bcl, VC4_PACKET_NV_SHADER_STATE);
 	cl_u32(&vc4->bcl, 0); // offset into shader_rec
 
 	cl_start_shader_reloc(&vc4->shader_rec, 3);
 	cl_u8(&vc4->shader_rec, 0);
-	cl_u8(&vc4->shader_rec, sizeof(struct shaded_vertex)); // stride
-	cl_u8(&vc4->shader_rec, 0xcc); // num uniforms (not used)
+	cl_u8(&vc4->shader_rec, vb->stride);
+	cl_u8(&vc4->shader_rec, 0); // num uniforms (not used)
 	cl_u8(&vc4->shader_rec, 3); // num varyings
 	cl_reloc(&vc4->shader_rec, vc4, vc4->prog.fs, 0);
 	cl_reloc(&vc4->shader_rec, vc4, vc4->uniforms, 0);
-	cl_reloc(&vc4->shader_rec, vc4, vbo, 0);
+	cl_reloc(&vc4->shader_rec, vc4, rsc->bo, vb->buffer_offset);
 
 	vc4->shader_rec_count++;
-	vc4_bo_unreference(vbo);
 }
 
 static void vc4_draw_vbo(struct pipe_context *pctx, struct pipe_draw_info *info)
@@ -170,7 +117,9 @@ static void vc4_draw_vbo(struct pipe_context *pctx, struct pipe_draw_info *info)
 
 	vc4_emit_state(vc4);
 
-	vc4_emit_nv_shader_state(vc4);
+	if ((vc4->dirty & VC4_DIRTY_VTXBUF)) {
+		vc4_emit_nv_shader_state(vc4);
+	}
 
 	vc4->dirty = 0;
 

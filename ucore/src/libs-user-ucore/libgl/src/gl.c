@@ -67,6 +67,21 @@ GL_API void GL_APIENTRY glDisableClientState(GLenum array)
 	}
 }
 
+static size_t emit_triangle(void *vaddr, float r, float g, float b, float x1,
+			    float y1, float z1, float x2, float y2, float z2,
+			    float x3, float y3, int z3)
+{
+	struct nv_shaded_vertex verts[] = {
+		{ ((int)x1) << 4, ((int)y1) << 4, z1, 1, r, g, b },
+		{ ((int)x2) << 4, ((int)y2) << 4, z2, 1, r, g, b },
+		{ ((int)x3) << 4, ((int)y3) << 4, z3, 1, r, g, b },
+	};
+
+	memcpy(vaddr, verts, sizeof(verts));
+
+	return sizeof(verts);
+}
+
 GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
 {
 	if (mode < GL_POINTS || mode > GL_TRIANGLE_FAN) {
@@ -88,13 +103,52 @@ GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
 	}
 
 	struct pipe_draw_info info;
+	struct pipe_vertex_buffer vb;
+	struct pipe_resource *rsc;
+	uint32_t stride = sizeof(struct nv_shaded_vertex);
+
+	rsc = pipe_ctx->resource_create(pipe_ctx, stride, count);
+	void *buffer = (struct nv_shaded_vertex *)pipe_ctx->resource_transfer_map(
+		pipe_ctx, rsc);
+
+	float sqrt3 = 1.7320508075688772f;
+	float sqrt6 = 2.449489742783178;
+	int size = 600;
+	int center_x = 0;
+	int center_y = 0;
+	float x0 = center_x - size / 2, y0 = center_y + sqrt3 / 6 * size,
+	      z0 = 1;
+	float x1 = x0 + size / 2, y1 = y0 - sqrt3 / 2 * size, z1 = z0;
+	float x2 = x0, y2 = y0, z2 = z0;
+	float x3 = x0 + size, y3 = y0, z3 = z0;
+	float x4 = x0 + size / 2, y4 = y0 - sqrt3 / 6 * size,
+	      z4 = z0; // + sqrt6 / 3 * size;
+
+	uint32_t offset = 0;
+	offset += emit_triangle(buffer + offset, 1, 1, 1, x1, y1 - 10, z1, x2 - 10,
+				y2 + 10, z2, x3 + 10, y3 + 10, z3);
+	offset += emit_triangle(buffer + offset, 1, 0, 0, x4, y4, z4, x2, y2, z2,
+				x1, y1, z1);
+	offset += emit_triangle(buffer + offset, 0, 0, 1, x4, y4, z4, x1, y1, z1,
+				x3, y3, z3);
+	offset += emit_triangle(buffer + offset, 0, 1, 0, x4, y4, z4, x2, y2, z2,
+				x3, y3, z3);
+
 	memset(&info, 0, sizeof(struct pipe_draw_info));
+	memset(&vb, 0, sizeof(struct pipe_vertex_buffer));
 
 	info.mode = mode;
-	info.start = first;
+	info.start = 0;
 	info.count = count;
 
+	vb.stride = stride;
+	vb.is_user_buffer = 1;
+	vb.buffer_offset = 0;
+	vb.buffer.resource = rsc;
+
+	pipe_ctx->set_vertex_buffers(pipe_ctx, &vb);
 	pipe_ctx->draw_vbo(pipe_ctx, &info);
+	pipe_ctx->resource_destroy(pipe_ctx, rsc);
 }
 
 GL_API void GL_APIENTRY glDrawElements(GLenum mode, GLsizei count, GLenum type,

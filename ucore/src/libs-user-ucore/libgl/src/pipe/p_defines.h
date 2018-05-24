@@ -22,6 +22,12 @@
                                  PIPE_CLEAR_COLOR6 | PIPE_CLEAR_COLOR7)
 #define PIPE_CLEAR_DEPTHSTENCIL (PIPE_CLEAR_DEPTH | PIPE_CLEAR_STENCIL)
 
+struct nv_shaded_vertex {
+	uint16_t x, y;
+	float z, rhw;
+	float r, g, b;
+};
+
 union pipe_color_union {
 	float f[4];
 	int i[4];

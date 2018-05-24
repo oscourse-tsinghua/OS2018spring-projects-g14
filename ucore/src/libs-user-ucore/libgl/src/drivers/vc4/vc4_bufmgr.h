@@ -35,7 +35,7 @@ static inline void vc4_bo_reference(struct vc4_bo *bo)
 
 static inline void vc4_bo_unreference(struct vc4_bo *bo)
 {
-	if (atomic_sub_return(&(bo->ref), 1) == 0) {
+	if (bo && atomic_sub_return(&(bo->ref), 1) == 0) {
 		list_del(&bo->bo_link);
 		vc4_bo_free(bo);
 	}

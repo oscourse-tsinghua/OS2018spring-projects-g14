@@ -174,6 +174,7 @@ static struct pipe_context *vc4_context_create(int fd)
 	vc4_draw_init(pctx);
 	vc4_state_init(pctx);
 	vc4_program_init(pctx);
+	vc4_resouce_init(pctx);
 
 	vc4->draw_min_x = ~0;
 	vc4->draw_min_y = ~0;

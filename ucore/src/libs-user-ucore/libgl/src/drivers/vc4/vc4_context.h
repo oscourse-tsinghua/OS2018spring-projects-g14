@@ -105,6 +105,8 @@ struct vc4_context {
 
 	struct pipe_viewport_state viewport;
 
+	struct pipe_vertex_buffer vertexbuf;
+
 	list_entry_t bo_list;
 };
 
