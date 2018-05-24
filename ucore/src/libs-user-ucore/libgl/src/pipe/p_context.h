@@ -4,10 +4,14 @@
 #include "p_defines.h"
 
 struct pipe_framebuffer_state;
-struct pipe_viewport_state;
 struct pipe_vertex_buffer;
 struct pipe_resource;
 struct pipe_draw_info;
+
+struct pipe_viewport_state {
+	float scale[3];
+	float translate[3];
+};
 
 struct pipe_clear_state {
 	unsigned buffers;
@@ -24,6 +28,7 @@ struct pipe_vertex_array_state {
 };
 
 struct pipe_context {
+	struct pipe_viewport_state viewport;
 	struct pipe_clear_state clear_state;
 	struct pipe_vertex_array_state vertex_pointer_state;
 	struct pipe_vertex_array_state color_pointer_state;
