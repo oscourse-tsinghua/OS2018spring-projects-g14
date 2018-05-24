@@ -16,7 +16,8 @@ static void vc4_get_draw_cl_space(struct vc4_context *vc4, int vert_count)
 					  VC4_PACKET_NV_SHADER_STATE_SIZE) *
 						   num_draws);
 
-	cl_ensure_space(&vc4->shader_rec, 16 * num_draws);
+	cl_ensure_space(&vc4->shader_rec,
+			(3 * sizeof(uint32_t) + 16) * num_draws);
 
 	cl_ensure_space(&vc4->bo_handles, 20 * sizeof(uint32_t));
 	cl_ensure_space(&vc4->bo_pointers, 20 * sizeof(uintptr_t));
@@ -112,6 +113,8 @@ static void vc4_draw_vbo(struct pipe_context *pctx, struct pipe_draw_info *info)
 	struct vc4_context *vc4 = vc4_context(pctx);
 
 	vc4_init_context_fbo(vc4);
+
+	vc4_get_draw_cl_space(vc4, 0);
 
 	vc4_start_draw(vc4);
 
