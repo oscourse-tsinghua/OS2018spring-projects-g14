@@ -512,6 +512,14 @@ int main(int argc, char *argv[])
 
 ## 测试
 
+![](img/IMG_0263.JPG)
+
+![](img/IMG_0264.JPG)
+
+![](img/IMG_0265.JPG)
+
+![](img/IMG_0267.JPG)
+
 ## 总结
 
 本次大实验，我完成了以下目标：
