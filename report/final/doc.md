@@ -2,7 +2,7 @@
 
 计54 贾越凯 2015011335
 
-2018 年 5 月 25 日
+2018 年 5 月 26 日
 
 ## 概述
 
@@ -18,7 +18,7 @@
     + 将 Nuklear GUI 库移植到 x86 等多种平台。
     + 支持 VideoCore IV GPU 的 3D 硬件加速。
 
-在 2018 年 5 月 4 日，实验取得了重大突破，能够根据文档控制 VC4 GPU 绘图了，而且有完成的参考代码(Linux 和 Mesa3D)，可以进一步实现 OpenGL ES 的部分功能。实现一个通用的 3D 图形库远比移植一个简陋的 2D GUI 系统意义大，于是决定不移植 GUI 库，新的目标为：
+在 2018 年 5 月 4 日，实验取得了重大突破，能够根据文档控制 VC4 GPU 绘图了，而且有完整的参考代码(Linux 和 Mesa3D)，可以进一步实现 OpenGL ES 的部分功能。实现一个通用的 3D 图形库远比移植一个简陋的 2D GUI 系统意义大，于是决定不移植 GUI 库，新的目标为：
 
 1. 在 uCore plus 上实现 VideoCore IV 的驱动；
 2. 使用该驱动实现 OpenGL ES 的部分功能，并封装成图形库(GL)供应用程序调用。
@@ -53,7 +53,7 @@ VideoCore IV(下称 VC4) 是 Broadcom 公司的一款低功耗移动多媒体处
 
 * 2016 年 1 月，Raspberry Pi 官方发布 Raspbian Scratch 操作系统，其中包含了 Eric Anholt 编写的开源 VC4 驱动。
 
-## 具体实现
+## 实现方案
 
 ### 移植之前
 
@@ -98,7 +98,7 @@ Raspberry PI mailbox 提供的接口包括 framebuffer interface 和 property in
 
 在我修改的 uCore plus 中，对 Raspberry PI mailbox 的操作位于 `KERN_SRC_ARM/mach-raspberrypi/mailbox.c` 和 `KERN_SRC_ARM/mach-raspberrypi/mailbox_property.c` 中。其中 `mailbox.c` 实现了对 mailbox IO 地址的读写操作，`mailbox_property.c` 封装了通过 mailbox 实现的一些访问 VC4 的操作。实现方案参考了 [Linux](https://github.com/torvalds/linux/blob/master/drivers/firmware/raspberrypi.c)，具有可扩展性，可在此基础上方便地实现更多 mailbox 操作。
 
-#### 实现 framebuffer 驱动
+#### Framebuffer 的完善
 
 [金昊衠的工作][jhz12] 首次通过 Raspberry PI 的 framebuffer 向屏幕中输出字符。不过该 framebuffer 的实现非常简单，只能在内核态对其进行访问。[陈宇恒等人的工作][cyh12] 将 Linux framebuffer 驱动直接移植到了 Android Goldfish 模拟器上，保留了 Linux 的系统调用接口，可以在用户态通过 `open("fb0:")`、`ioctl` 和 `mmap`(uCore plus 中为 `sys_linux_mmap()`) 系统调用对其进行访问，在 `ucore/src/user-ucore/tests/arch/arm/hello.c` 中还有个基于 framebuffer 实现的简单动画。
 
@@ -184,7 +184,7 @@ VC4 中有 3 种着色器，分别为顶点着色器(Vertex Shader)、坐标着�
 
 VC4 的着色器处理器被称为 QPU(Quad Processor Unit)，一种 SIMD 处理器，一块 VC4 GPU 上拥有 16 个 QPU。应用程序一般会把着色器程序写为 GLSL(OpenGL Shading Language) 语言，然后在程序运行时动态编译，生成 QPU 的指令。
 
-标准的 OpenGL ES 2.0 必须指定着色器才能绘制，VC4 也是如此，必须在 BCL 中指定 Shader State 来设置着色器。Shader State 分三种，GL Shader State、NV Shader State 和 VG Shader State，每种都对应不同的 Shader State Record 格式。其中在 GL Shader State Record 中必须给出全部三种着色器程序的地址；而 NV(no vertex) Shader State Record 认为它的顶点数据都是已经被顶点着色器处理过的了，所有只需指定片段着色器；VG Shader State 用于 Open VG，也只需指定片段着色器，
+标准的 OpenGL ES 2.0 必须指定着色器才能绘制，VC4 也是如此，必须在 BCL 中指定 Shader State 来设置着色器。Shader State 分三种，GL Shader State、NV Shader State 和 VG Shader State，每种都对应不同的 Shader State Record 格式。其中在 GL Shader State Record 中必须给出全部三种着色器程序的地址；而 NV(no vertex) Shader State Record 认为它的顶点数据都是已经被顶点着色器处理过的了，所以只需指定片段着色器；VG Shader State 用于 Open VG，也只需指定片段着色器，
 
 #### Linux + Mesa 框架中的实现
 
@@ -332,7 +332,7 @@ vc4
 
 3. 一次提交时由内核创建的显存，在该次提交绘制完成后就不被使用，如 BCL、RCL 所用的显存。这类 BO 可在创建后用链表组织起来，绘图完成时遍历链表，统一释放。
 
-4. 执行一次绘图命令时又用户态创建的显存，需要一直保留到该命令被提交，如 `glDrawElements` 指定的顶点编号。对这类 BO 我使用引用计数的方式管理：在 BO 被创建时初始化引用计数为 1，一次提交结束后将所有用到的 BO 的引用计数减 1，当引用计数减为 0 时自动释放 BO。
+4. 执行一次绘图命令时由用户态创建的显存，需要一直保留到该命令被提交，如 `glDrawElements` 指定的顶点编号。对这类 BO 我使用引用计数的方式管理：在 BO 被创建时初始化引用计数为 1，一次提交结束后将所有用到的 BO 的引用计数减 1，当引用计数减为 0 时自动释放 BO。
 
 ### OpenGL ES 的实现
 
@@ -363,7 +363,12 @@ vc4
 | `glLoadIdentity()` | 设置当前矩阵为单位矩阵      |
 | `glMultMatrixf()`  | 将当前矩阵右乘上给定矩阵     |
 | `glTranslatef()`   | 将当前矩阵右乘上平移矩阵     |
-| `glFrustumf()`     | 将当前矩阵右乘上透视矩阵     |
+| `glScalef()`       | 将当前矩阵右乘上缩放矩阵     |
+| `glRotatef()`      | 将当前矩阵右乘上旋转矩阵     |
+| `glFrustumf()`     | 将当前矩阵右乘上透视投影矩阵  |
+| `glOrthof()`       | 将当前矩阵右乘上正交投影矩阵  |
+| `glPushMatrix()`   | 将当前矩阵复制一份，压入矩阵栈 |
+| `glPopMatrix()`    | 令当前矩阵为矩阵栈顶的矩阵，并从栈中弹出该矩阵  |
 
 #### 图形库的实现
 
@@ -510,7 +515,7 @@ int main(int argc, char *argv[])
 
 实现了矩阵运算后，已经可以显示 3D 模型了，但是由于暂时未搞定深度缓冲区的设置，使得后画的三角形会覆盖先画的三角形。
 
-## 测试
+## 效果展示
 
 ![](img/IMG_0263.JPG)
 
