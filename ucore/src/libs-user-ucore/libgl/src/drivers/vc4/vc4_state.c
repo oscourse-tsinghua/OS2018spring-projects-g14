@@ -33,6 +33,7 @@ static void vc4_set_depth_stencil_alpha_state(
 	struct vc4_depth_stencil_alpha_state *so = &vc4->zsa;
 
 	so->base = *cso;
+	memset(so->config_bits, 0, sizeof(so->config_bits));
 
 	/* We always keep the early Z state correct, since a later state using
 	 * early Z may want it.

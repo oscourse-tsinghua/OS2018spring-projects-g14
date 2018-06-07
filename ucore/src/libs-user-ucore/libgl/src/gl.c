@@ -80,13 +80,29 @@ GL_API void GL_APIENTRY glColorPointer(GLint size, GLenum type, GLsizei stride,
 	state->pointer = pointer;
 }
 
+GL_API void GL_APIENTRY glDisable(GLenum cap)
+{
+	switch (cap) {
+	case GL_DEPTH_TEST:
+		pipe_ctx->depth_stencil.depth.enabled = 0;
+		pipe_ctx->set_depth_stencil_alpha_state(
+			pipe_ctx, &pipe_ctx->depth_stencil);
+		break;
+	default:
+		pipe_ctx->last_error = GL_INVALID_ENUM;
+	}
+}
+
 GL_API void GL_APIENTRY glDisableClientState(GLenum array)
 {
-	if (array == GL_VERTEX_ARRAY) {
+	switch (array) {
+	case GL_VERTEX_ARRAY:
 		pipe_ctx->vertex_pointer_state.enabled = 0;
-	} else if (array == GL_COLOR_ARRAY) {
+		break;
+	case GL_COLOR_ARRAY:
 		pipe_ctx->color_pointer_state.enabled = 0;
-	} else {
+		break;
+	default:
 		pipe_ctx->last_error = GL_INVALID_ENUM;
 	}
 }
@@ -131,7 +147,8 @@ GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
 		pipe_ctx, rsc);
 
 	int i;
-	const float *pointer = (float *)vertex_state->pointer + first * vertex_stride;
+	const float *pointer =
+		(float *)vertex_state->pointer + first * vertex_stride;
 	const float *scale = pipe_ctx->viewport.scale;
 	const float *translate = pipe_ctx->viewport.translate;
 	const float *color = pipe_ctx->current_color.f;
@@ -139,7 +156,7 @@ GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
 		color_stride = color_state->stride ?
 				       color_state->stride / sizeof(float) :
 				       color_state->size;
-		color = (float*)color_state->pointer + first * color_stride;
+		color = (float *)color_state->pointer + first * color_stride;
 	}
 
 	for (i = 0; i < count; i++, pointer += vertex_stride) {
@@ -180,13 +197,29 @@ GL_API void GL_APIENTRY glDrawElements(GLenum mode, GLsizei count, GLenum type,
 {
 }
 
+GL_API void GL_APIENTRY glEnable(GLenum cap)
+{
+	switch (cap) {
+	case GL_DEPTH_TEST:
+		pipe_ctx->depth_stencil.depth.enabled = 1;
+		pipe_ctx->set_depth_stencil_alpha_state(
+			pipe_ctx, &pipe_ctx->depth_stencil);
+		break;
+	default:
+		pipe_ctx->last_error = GL_INVALID_ENUM;
+	}
+}
+
 GL_API void GL_APIENTRY glEnableClientState(GLenum array)
 {
-	if (array == GL_VERTEX_ARRAY) {
+	switch (array) {
+	case GL_VERTEX_ARRAY:
 		pipe_ctx->vertex_pointer_state.enabled = 1;
-	} else if (array == GL_COLOR_ARRAY) {
+		break;
+	case GL_COLOR_ARRAY:
 		pipe_ctx->color_pointer_state.enabled = 1;
-	} else {
+		break;
+	default:
 		pipe_ctx->last_error = GL_INVALID_ENUM;
 	}
 }
