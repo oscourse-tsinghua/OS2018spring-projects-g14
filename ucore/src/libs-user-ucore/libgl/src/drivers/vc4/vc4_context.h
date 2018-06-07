@@ -102,6 +102,12 @@ struct vc4_context {
 	 */
 	bool needs_flush;
 
+	/**
+	 * Number of draw calls (not counting full buffer clears) queued in
+	 * the current job.
+	 */
+	uint32_t draw_calls_queued;
+
 	/** Maximum index buffer valid for the current shader_rec. */
 	uint32_t max_index;
 

@@ -42,6 +42,7 @@ static void vc4_reset_context(struct vc4_context *vc4)
 	vc4->shader_rec_count = 0;
 
 	vc4->needs_flush = 0;
+	vc4->draw_calls_queued = 0;
 	/* We have no hardware context saved between our draw calls, so we
 	 * need to flag the next draw as needing all state emitted.  Emitting
 	 * all state at the start of our draws is also what ensures that we

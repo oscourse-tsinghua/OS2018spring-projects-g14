@@ -73,6 +73,7 @@ static void vc4_start_draw(struct vc4_context *vc4)
 				 VC4_PRIMITIVE_LIST_FORMAT_TYPE_TRIANGLES);
 
 	vc4->needs_flush = 1;
+	vc4->draw_calls_queued++;
 	vc4->draw_width = vc4->framebuffer.width;
 	vc4->draw_height = vc4->framebuffer.height;
 }
@@ -194,6 +195,13 @@ static void vc4_clear(struct pipe_context *pctx, unsigned buffers,
 		      unsigned stencil)
 {
 	struct vc4_context *vc4 = vc4_context(pctx);
+
+	/* We can't flag new buffers for clearing once we've queued draws.  We
+	 * could avoid this by using the 3d engine to clear.
+	 */
+	if (vc4->draw_calls_queued) {
+		vc4_flush(pctx);
+	}
 
 	if (buffers & PIPE_CLEAR_COLOR0) {
 		uint32_t clear_color;
