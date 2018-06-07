@@ -4,7 +4,7 @@
 #include "vc4_packet.h"
 #include "vc4_context.h"
 
-static void dump_fbo(struct vc4_context *vc4)
+static void dump_fbo(struct vc4_context *vc4, uint32_t offset)
 {
 	struct pipe_framebuffer_state *fb = &vc4->framebuffer;
 	uint32_t center_x = fb->width / 2;
@@ -17,7 +17,7 @@ static void dump_fbo(struct vc4_context *vc4)
 			uint32_t addr =
 				((y + center_y) * fb->width + (x + center_x)) *
 				bytes_per_pixel;
-			char *ptr = fb->screen_base + fb->offset + addr;
+			char *ptr = fb->screen_base + offset + addr;
 			int k;
 			for (k = bytes_per_pixel - 1; k >= 0; k--)
 				cprintf("%02x", *(ptr + k));
@@ -128,7 +128,7 @@ void vc4_flush(struct pipe_context *pctx)
 
 	vc4_reset_context(vc4);
 
-	// dump_fbo(vc4);
+	// dump_fbo(vc4, submit.color_write.offset);
 }
 
 void vc4_context_destroy(struct pipe_context *pctx)

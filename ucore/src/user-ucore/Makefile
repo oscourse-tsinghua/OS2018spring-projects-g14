@@ -13,11 +13,14 @@ USER_LIB_OBJDIR := $(OBJPATH_ROOT)/libs-user-ucore
 USER_LIB := $(USER_LIB_OBJDIR)/ulib.a
 BIN := $(USER_OBJ_ROOT)/bin
 TESTBIN := $(USER_OBJ_ROOT)/testbin
+GLESBIN := $(USER_OBJ_ROOT)/glesbin
 INITIAL_DIR := _initial
 
 USER_APPLIST:= pwd cat sh ls cp echo link mkdir rename unlink lsmod insmod rmmod mount umount halt
+
 ifeq ($(UCONFIG_GPU_ENABLE),y)
 USER_APPLIST += gles
+USER_GLESLIST := $(basename $(wildcard gles/*.c))
 TARGET_CFLAGS += -I$(USER_LIB_SRCDIR)/libgl/include
 TARGET_LDFLAGS += -L$(USER_LIB_OBJDIR)/libgl -lgl
 USER_LIB += $(USER_LIB_OBJDIR)/libgl/libgl.a
@@ -30,13 +33,14 @@ endif
 
 USER_APP_BINS:= $(addprefix $(BIN)/, $(USER_APPLIST))
 USER_TEST_BINS := $(addprefix $(TESTBIN)/, $(notdir $(USER_TESTLIST)))
+USER_GLES_BINS := $(addprefix $(GLESBIN)/, $(notdir $(USER_GLESLIST)))
 
 include $(USER_LIB_SRCDIR)/arch/$(ARCH)/include.mk
 INITCODE_OBJ := $(USER_LIB_OBJDIR)/arch/$(ARCH)/$(ARCH_INITCODE_OBJ)
 TARGET_CFLAGS += $(ARCH_CFLAGS)
 TARGET_LDFLAGS += $(ARCH_LDFLAGS)
 
-all:  $(BIN) $(TESTBIN) $(USER_LIB) $(USER_APP_BINS) $(USER_TEST_BINS)
+all:  $(BIN) $(TESTBIN) $(GLESBIN) $(USER_LIB) $(USER_APP_BINS) $(USER_TEST_BINS) $(USER_GLES_BINS)
 
 #user applications
 define make-user-app
@@ -49,6 +53,8 @@ $(foreach bdir,$(USER_APPLIST),$(eval $(call make-user-app,$(bdir),$(BIN))))
 
 $(foreach bdir,$(USER_TESTLIST),$(eval $(call make-user-app,$(bdir),$(TESTBIN))))
 
+$(foreach bdir,$(USER_GLESLIST),$(eval $(call make-user-app,$(bdir),$(GLESBIN))))
+
 $(USER_OBJ_ROOT)/%.o: %.c
 	$(TARGET_CC) $(TARGET_CFLAGS) -c -o $@ $<
 
@@ -59,6 +65,12 @@ $(TESTBIN):
 	-mkdir -p $(USER_OBJ_ROOT)/tests
 	-mkdir -p $(USER_OBJ_ROOT)/tests/arch/$(ARCH)
 	-mkdir -p $(TESTBIN)
+
+$(GLESBIN):
+ifeq ($(UCONFIG_GPU_ENABLE),y)
+	-mkdir -p $(USER_OBJ_ROOT)/gles
+	-mkdir -p $(GLESBIN)
+endif
 
 ifeq ($(UCONFIG_SFS_MINIMAL_CONTENT),y)
 initial_dir:
