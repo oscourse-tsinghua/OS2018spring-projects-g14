@@ -39,6 +39,13 @@ struct vc4_program_stateobj {
 	struct vc4_bo *vs, *fs;
 };
 
+struct vc4_depth_stencil_alpha_state {
+	struct pipe_depth_stencil_alpha_state base;
+
+	/* VC4_CONFIGURATION_BITS */
+	uint8_t config_bits[3];
+};
+
 struct vc4_context {
 	struct pipe_context base;
 	int fd;
@@ -72,7 +79,10 @@ struct vc4_context {
 
 	uint32_t tile_width; /** @< Width of a tile. */
 	uint32_t tile_height; /** @< Height of a tile. */
+	/** @} */
 
+	/** bitfield of VC4_DIRTY_* */
+	uint32_t dirty;
 	/* Bitmask of PIPE_CLEAR_* of buffers that were cleared before the
 	 * first rendering.
 	 */
@@ -92,20 +102,19 @@ struct vc4_context {
 	 */
 	bool needs_flush;
 
-	/** bitfield of VC4_DIRTY_* */
-	uint32_t dirty;
-
 	/** Maximum index buffer valid for the current shader_rec. */
 	uint32_t max_index;
+
+	/** @{ Current pipeline state objects */
+	struct vc4_depth_stencil_alpha_state zsa;
 
 	struct vc4_program_stateobj prog;
 	struct vc4_bo *uniforms;
 
 	struct pipe_framebuffer_state framebuffer;
-
 	struct pipe_viewport_state viewport;
-
 	struct pipe_vertex_buffer vertexbuf;
+	/** @} */
 
 	list_entry_t bo_list;
 };
@@ -123,5 +132,7 @@ void vc4_program_init(struct pipe_context *pctx);
 
 void vc4_context_destroy(struct pipe_context *pctx);
 void vc4_flush(struct pipe_context *pctx);
+
+void vc4_update_compiled_shaders(struct vc4_context *vc4, uint8_t prim_mode);
 
 #endif // VC4_CONTEXT

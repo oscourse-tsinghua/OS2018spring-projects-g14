@@ -32,17 +32,20 @@ void vc4_emit_state(struct vc4_context *vc4)
 			vc4->draw_max_y = maxy;
 	}
 
-	if (vc4->dirty & VC4_DIRTY_RASTERIZER) {
-		uint32_t config_bits[3];
-		config_bits[0] = VC4_CONFIG_BITS_ENABLE_PRIM_FRONT |
-				 VC4_CONFIG_BITS_ENABLE_PRIM_BACK;
-		config_bits[1] = 0; // depth testing disabled
-		config_bits[2] = VC4_CONFIG_BITS_EARLY_Z_UPDATE;
+	if (vc4->dirty & (VC4_DIRTY_RASTERIZER | VC4_DIRTY_ZSA)) {
+		uint32_t rasterizer_config_bits[3];
+		rasterizer_config_bits[0] = VC4_CONFIG_BITS_ENABLE_PRIM_FRONT |
+					    VC4_CONFIG_BITS_ENABLE_PRIM_BACK;
+		rasterizer_config_bits[1] = 0;
+		rasterizer_config_bits[2] = 0;
 
 		cl_u8(&vc4->bcl, VC4_PACKET_CONFIGURATION_BITS);
-		cl_u8(&vc4->bcl, config_bits[0]);
-		cl_u8(&vc4->bcl, config_bits[1]);
-		cl_u8(&vc4->bcl, config_bits[2]);
+		cl_u8(&vc4->bcl,
+		      rasterizer_config_bits[0] | vc4->zsa.config_bits[0]);
+		cl_u8(&vc4->bcl,
+		      rasterizer_config_bits[1] | vc4->zsa.config_bits[1]);
+		cl_u8(&vc4->bcl,
+		      rasterizer_config_bits[2] | vc4->zsa.config_bits[2]);
 	}
 
 	if (vc4->dirty & VC4_DIRTY_VIEWPORT) {

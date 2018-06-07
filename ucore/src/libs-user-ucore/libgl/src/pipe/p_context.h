@@ -2,36 +2,20 @@
 #define PIPE_CONTEXT_H
 
 #include "p_defines.h"
+#include "p_state.h"
 
+struct pipe_depth_stencil_alpha_state;
 struct pipe_framebuffer_state;
 struct pipe_vertex_buffer;
 struct pipe_resource;
 struct pipe_draw_info;
-
-struct pipe_viewport_state {
-	float scale[3];
-	float translate[3];
-};
-
-struct pipe_clear_state {
-	unsigned buffers;
-	union pipe_color_union color;
-	double depth;
-	unsigned stencil;
-};
-
-struct pipe_vertex_array_state {
-	uint8_t size;
-	uint16_t stride;
-	bool enabled;
-	const void *pointer;
-};
 
 struct pipe_context {
 	struct pipe_viewport_state viewport;
 	struct pipe_clear_state clear_state;
 	struct pipe_vertex_array_state vertex_pointer_state;
 	struct pipe_vertex_array_state color_pointer_state;
+	struct pipe_depth_stencil_alpha_state depth_stencil;
 
 	union pipe_color_union current_color;
 	uint32_t last_error;
@@ -42,6 +26,10 @@ struct pipe_context {
 		      const union pipe_color_union *color, double depth,
 		      unsigned stencil);
 	void (*flush)(struct pipe_context *ctx);
+
+	void (*set_depth_stencil_alpha_state)(
+		struct pipe_context *,
+		const struct pipe_depth_stencil_alpha_state *);
 
 	int (*create_fs_state)(struct pipe_context *);
 

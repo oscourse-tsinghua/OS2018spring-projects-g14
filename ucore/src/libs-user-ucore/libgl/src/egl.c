@@ -31,7 +31,13 @@ static void initContext(EGLDisplay dpy, EGLContext ctx)
 	pctx->current_color =
 		(union pipe_color_union){ 1.0f, 1.0f, 1.0f, 1.0f };
 
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+	pctx->depth_stencil.depth.enabled = 1;
+	pctx->depth_stencil.depth.writemask = 1;
+	pctx->depth_stencil.depth.func = PIPE_FUNC_LESS;
+	pctx->set_depth_stencil_alpha_state(pctx, &pctx->depth_stencil);
+
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT |
+		GL_STENCIL_BUFFER_BIT);
 	glViewport(0, 0, framebuffer->width, framebuffer->height);
 }
 

@@ -2,6 +2,19 @@
 #define PIPE_DEFINES_H
 
 /**
+ * Inequality functions.  Used for depth test, stencil compare, alpha
+ * test, shadow compare, etc.
+ */
+#define PIPE_FUNC_NEVER    0
+#define PIPE_FUNC_LESS     1
+#define PIPE_FUNC_EQUAL    2
+#define PIPE_FUNC_LEQUAL   3
+#define PIPE_FUNC_GREATER  4
+#define PIPE_FUNC_NOTEQUAL 5
+#define PIPE_FUNC_GEQUAL   6
+#define PIPE_FUNC_ALWAYS   7
+
+/**
  * Clear buffer bits
  */
 #define PIPE_CLEAR_DEPTH        (1 << 0)

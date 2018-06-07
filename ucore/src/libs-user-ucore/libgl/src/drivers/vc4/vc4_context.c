@@ -27,7 +27,7 @@ static void dump_fbo(struct vc4_context *vc4)
 	}
 }
 
-static void vc4_clear_context(struct vc4_context *vc4)
+static void vc4_reset_context(struct vc4_context *vc4)
 {
 	int i;
 	struct vc4_bo **referenced_bos = vc4->bo_pointers.base;
@@ -39,11 +39,17 @@ static void vc4_clear_context(struct vc4_context *vc4)
 	vc4_reset_cl(&vc4->shader_rec);
 	vc4_reset_cl(&vc4->bo_handles);
 	vc4_reset_cl(&vc4->bo_pointers);
-
 	vc4->shader_rec_count = 0;
+
 	vc4->needs_flush = 0;
-	vc4->cleared = 0;
+	/* We have no hardware context saved between our draw calls, so we
+	 * need to flag the next draw as needing all state emitted.  Emitting
+	 * all state at the start of our draws is also what ensures that we
+	 * return to the state we need after a previous tile has finished.
+	 */
 	vc4->dirty = ~0;
+	vc4->resolve = 0;
+	vc4->cleared = 0;
 }
 
 void vc4_flush(struct pipe_context *pctx)
@@ -119,7 +125,7 @@ void vc4_flush(struct pipe_context *pctx)
 		cprintf("GLES: submit failed: %e.\n", ret);
 	}
 
-	vc4_clear_context(vc4);
+	vc4_reset_context(vc4);
 
 	// dump_fbo(vc4);
 }

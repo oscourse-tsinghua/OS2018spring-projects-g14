@@ -105,6 +105,13 @@ static void vc4_emit_nv_shader_state(struct vc4_context *vc4)
 	cl_reloc(&vc4->shader_rec, vc4, vc4->uniforms, 0);
 	cl_reloc(&vc4->shader_rec, vc4, rsc->bo, vb->buffer_offset);
 
+	if (vc4->zsa.base.depth.enabled) {
+		vc4->resolve |= PIPE_CLEAR_DEPTH;
+	}
+	if (vc4->zsa.base.stencil[0].enabled)
+		vc4->resolve |= PIPE_CLEAR_STENCIL;
+	vc4->resolve |= PIPE_CLEAR_COLOR0;
+
 	vc4->shader_rec_count++;
 }
 
@@ -117,6 +124,7 @@ static void vc4_draw_vbo(struct pipe_context *pctx, struct pipe_draw_info *info)
 	vc4_get_draw_cl_space(vc4, 0);
 
 	vc4_start_draw(vc4);
+	vc4_update_compiled_shaders(vc4, info->mode);
 
 	vc4_emit_state(vc4);
 
