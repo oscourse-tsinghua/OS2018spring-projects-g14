@@ -2,8 +2,8 @@
 #define PIPE_CONTEXT_H
 
 #include "p_defines.h"
-#include "p_state.h"
 
+struct pipe_viewport_state;
 struct pipe_depth_stencil_alpha_state;
 struct pipe_framebuffer_state;
 struct pipe_vertex_buffer;
@@ -11,15 +11,6 @@ struct pipe_resource;
 struct pipe_draw_info;
 
 struct pipe_context {
-	struct pipe_viewport_state viewport;
-	struct pipe_clear_state clear_state;
-	struct pipe_vertex_array_state vertex_pointer_state;
-	struct pipe_vertex_array_state color_pointer_state;
-	struct pipe_depth_stencil_alpha_state depth_stencil;
-
-	union pipe_color_union current_color;
-	uint32_t last_error;
-
 	void (*destroy)(struct pipe_context *ctx);
 	void (*draw_vbo)(struct pipe_context *ctx, struct pipe_draw_info *info);
 	void (*clear)(struct pipe_context *ctx, unsigned buffers,

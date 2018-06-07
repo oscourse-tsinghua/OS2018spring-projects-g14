@@ -7,65 +7,14 @@
 #include <EGL/egl.h>
 #include <GLES/gl.h>
 
-#include "pipe/p_state.h"
+#include "gl_context.h"
 #include "pipe/p_context.h"
 
 static int fb_fd = 0;
 static int gpu_fd = 0;
 static struct fb_var_screeninfo var;
 
-extern struct pipe_context *pipe_ctx;
-
-static void initContext(EGLDisplay dpy, EGLContext ctx)
-{
-	struct pipe_context *pctx = (struct pipe_context *)ctx;
-	struct pipe_framebuffer_state *framebuffer =
-		(struct pipe_framebuffer_state *)dpy;
-
-	// clear_state
-	{
-		struct pipe_clear_state *clear_state = &pctx->clear_state;
-		clear_state->buffers = 0;
-		clear_state->depth = 1.0;
-		clear_state->stencil = 0;
-		memset(clear_state->color, 0, sizeof(union pipe_color_union));
-	}
-
-	// current_color
-	{
-		pctx->current_color =
-			(union pipe_color_union){ 1.0f, 1.0f, 1.0f, 1.0f };
-	}
-
-	// depth_stencil_alpha
-	{
-		struct pipe_depth_stencil_alpha_state *depth_stencil =
-			&pctx->depth_stencil;
-		depth_stencil->depth.enabled = 0;
-		depth_stencil->depth.writemask = 1;
-		depth_stencil->depth.func = PIPE_FUNC_LESS;
-		pctx->set_depth_stencil_alpha_state(pctx, depth_stencil);
-	}
-
-	// viewport
-	{
-		struct pipe_viewport_state *viewport = &pctx->viewport;
-		float half_width = 0.5f * framebuffer->width;
-		float half_height = 0.5f * framebuffer->height;
-		float n = 0;
-		float f = 1;
-
-		viewport->scale[0] = half_width;
-		viewport->translate[0] = half_width;
-		viewport->scale[1] = half_height;
-		viewport->translate[1] = half_height;
-		viewport->scale[2] = 0.5 * (f - n);
-		viewport->translate[2] = 0.5 * (n + f);
-
-		pctx->set_viewport_state(pctx, viewport);
-	}
-}
-
+// XXX deprecated
 EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id)
 {
 	struct pipe_framebuffer_state *framebuffer;
@@ -116,22 +65,24 @@ EGLContext eglCreateContext(EGLDisplay dpy)
 		return EGL_NO_CONTEXT;
 	}
 
-	struct pipe_context *pctx = pipe_context_create(gpu_fd);
+	struct gl_context *context = gl_context_create(gpu_fd);
 	struct pipe_framebuffer_state *framebuffer;
 	framebuffer = (struct pipe_framebuffer_state *)dpy;
 
-	if (pctx == NULL) {
+	if (context == NULL) {
 		return EGL_NO_CONTEXT;
 	}
 
-	pctx->set_framebuffer_state(pctx, framebuffer);
-	if ((ret = pctx->create_fs_state(pctx))) {
+	// XXX
+	context->framebuffer = *framebuffer;
+	context->pipe->set_framebuffer_state(context->pipe, framebuffer);
+	if ((ret = context->pipe->create_fs_state(context->pipe))) {
 		return EGL_NO_CONTEXT;
 	}
 
-	initContext(dpy, pctx);
+	gl_default_state(context);
 
-	return pctx;
+	return context;
 }
 
 EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLContext ctx)
@@ -140,7 +91,8 @@ EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLContext ctx)
 		return 0;
 	}
 
-	pipe_ctx = (struct pipe_context *)ctx;
+	extern struct gl_context *context;
+	context = (struct gl_context *)ctx;
 
 	return 1;
 }
@@ -157,8 +109,8 @@ EGLBoolean eglDestroyContext(EGLDisplay dpy, EGLContext ctx)
 		return 0;
 	}
 
-	struct pipe_context *pctx = (struct pipe_context *)ctx;
-	pipe_ctx->destroy(pipe_ctx);
+	struct gl_context *context = (struct gl_context *)ctx;
+	gl_context_destroy(context);
 
 	if (gpu_fd) {
 		close(gpu_fd);
@@ -172,9 +124,8 @@ EGLBoolean eglDestroyContext(EGLDisplay dpy, EGLContext ctx)
 
 EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLContext ctx)
 {
-	struct pipe_context *pctx = (struct pipe_context *)ctx;
-	struct pipe_framebuffer_state *framebuffer;
-	framebuffer = (struct pipe_framebuffer_state *)dpy;
+	struct gl_context *context = (struct gl_context *)ctx;
+	struct pipe_framebuffer_state *framebuffer = &context->framebuffer;
 	int ret = 0;
 
 	uint32_t offset = framebuffer->offset;
@@ -186,7 +137,7 @@ EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLContext ctx)
 	}
 
 	framebuffer->offset = offset;
-	pctx->set_framebuffer_state(pctx, framebuffer);
+	context->pipe->set_framebuffer_state(context->pipe, framebuffer);
 
 	return 1;
 }
