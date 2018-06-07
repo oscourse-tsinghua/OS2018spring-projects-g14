@@ -80,6 +80,24 @@ GL_API void GL_APIENTRY glColorPointer(GLint size, GLenum type, GLsizei stride,
 	state->pointer = pointer;
 }
 
+GL_API void GL_APIENTRY glDepthFunc(GLenum func)
+{
+	if (func < GL_NEVER || func > GL_ALWAYS) {
+		pipe_ctx->last_error = GL_INVALID_ENUM;
+		return;
+	}
+	pipe_ctx->depth_stencil.depth.func = func;
+	pipe_ctx->set_depth_stencil_alpha_state(pipe_ctx,
+						&pipe_ctx->depth_stencil);
+}
+
+GL_API void GL_APIENTRY glDepthMask(GLboolean flag)
+{
+	pipe_ctx->depth_stencil.depth.writemask = flag;
+	pipe_ctx->set_depth_stencil_alpha_state(pipe_ctx,
+						&pipe_ctx->depth_stencil);
+}
+
 GL_API void GL_APIENTRY glDisable(GLenum cap)
 {
 	switch (cap) {
@@ -162,7 +180,7 @@ GL_API void GL_APIENTRY glDrawArrays(GLenum mode, GLint first, GLsizei count)
 	for (i = 0; i < count; i++, pointer += vertex_stride) {
 		buffer[i] = (struct nv_shaded_vertex){
 			.x = (int16_t)((pointer[0] * scale[0]) * 16),
-			.y = (int16_t)((pointer[1] * scale[1]) * 16),
+			.y = (int16_t)((pointer[1] * -scale[1]) * 16),
 			.z = 0.0,
 			.rhw = 1.0,
 			.r = color[0],
