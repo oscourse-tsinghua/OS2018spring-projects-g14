@@ -80,6 +80,14 @@ GL_API void GL_APIENTRY glColorPointer(GLint size, GLenum type, GLsizei stride,
 	state->pointer = pointer;
 }
 
+GL_API void GL_APIENTRY glDepthRangef(GLfloat n, GLfloat f)
+{
+	struct pipe_viewport_state *viewport = &pipe_ctx->viewport;
+	viewport->scale[2] = 0.5 * (f - n);
+	viewport->translate[2] = 0.5 * (n + f);
+	pipe_ctx->set_viewport_state(pipe_ctx, viewport);
+}
+
 GL_API void GL_APIENTRY glDepthFunc(GLenum func)
 {
 	if (func < GL_NEVER || func > GL_ALWAYS) {
@@ -289,15 +297,10 @@ GL_API void GL_APIENTRY glViewport(GLint x, GLint y, GLsizei width,
 	struct pipe_viewport_state *viewport = &pipe_ctx->viewport;
 	float half_width = 0.5f * width;
 	float half_height = 0.5f * height;
-	float n = 0;
-	float f = 1;
-
 	viewport->scale[0] = half_width;
 	viewport->translate[0] = half_width + x;
 	viewport->scale[1] = half_height;
 	viewport->translate[1] = half_height + y;
-	viewport->scale[2] = 0.5 * (f - n);
-	viewport->translate[2] = 0.5 * (n + f);
 
 	pipe_ctx->set_viewport_state(pipe_ctx, viewport);
 }
