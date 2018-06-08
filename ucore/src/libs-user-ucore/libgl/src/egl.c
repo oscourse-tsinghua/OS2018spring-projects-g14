@@ -1,7 +1,6 @@
 #include <error.h>
 
 #include <EGL/egl.h>
-#include <GLES/gl.h>
 
 #include "gl_context.h"
 

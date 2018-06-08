@@ -7,7 +7,41 @@
 #include "gl_context.h"
 #include "pipe/p_context.h"
 
+/** Clamp X to [MIN,MAX] */
+#define CLAMP(X, MIN, MAX) ((X) < (MIN) ? (MIN) : ((X) > (MAX) ? (MAX) : (X)))
+
 struct gl_context *context = NULL;
+
+static void set_viewport_no_notify(struct gl_context *ctx, GLint x, GLint y,
+				   GLsizei width, GLsizei height)
+{
+	struct pipe_viewport_state *viewport = &ctx->viewport;
+	struct pipe_framebuffer_state *framebuffer = &ctx->framebuffer;
+	x = CLAMP(x, 0, framebuffer->width);
+	y = CLAMP(y, 0, framebuffer->height);
+	if (width > framebuffer->width)
+		width = framebuffer->width;
+	if (height > framebuffer->height)
+		height = framebuffer->height;
+
+	float half_width = 0.5f * width;
+	float half_height = 0.5f * height;
+	viewport->scale[0] = half_width;
+	viewport->translate[0] = half_width + x;
+	viewport->scale[1] = half_height;
+	viewport->translate[1] = half_height + y;
+}
+
+static void set_depth_range_no_notify(struct gl_context *ctx, GLfloat n,
+				      GLfloat f)
+{
+	struct pipe_viewport_state *viewport = &ctx->viewport;
+	f = CLAMP(f, 0.0, 1.0);
+	n = CLAMP(n, 0.0, 1.0);
+
+	viewport->scale[2] = 0.5 * (f - n);
+	viewport->translate[2] = 0.5 * (n + f);
+}
 
 inline struct gl_context *gl_current_context(void)
 {
@@ -108,7 +142,6 @@ int gl_default_state(struct gl_context *ctx)
 	// clear_state
 	{
 		struct pipe_clear_state *clear_state = &ctx->clear_state;
-		clear_state->buffers = 0;
 		clear_state->depth = 1.0;
 		clear_state->stencil = 0;
 		memset(clear_state->color, 0, sizeof(union pipe_color_union));
@@ -127,21 +160,10 @@ int gl_default_state(struct gl_context *ctx)
 
 	// viewport
 	{
-		struct pipe_framebuffer_state *framebuffer = &ctx->framebuffer;
-		struct pipe_viewport_state *viewport = &ctx->viewport;
-		float half_width = 0.5f * framebuffer->width;
-		float half_height = 0.5f * framebuffer->height;
-		float n = 0;
-		float f = 1;
-
-		viewport->scale[0] = half_width;
-		viewport->translate[0] = half_width;
-		viewport->scale[1] = half_height;
-		viewport->translate[1] = half_height;
-		viewport->scale[2] = 0.5 * (f - n);
-		viewport->translate[2] = 0.5 * (n + f);
-
-		ctx->pipe->set_viewport_state(ctx->pipe, viewport);
+		set_viewport_no_notify(ctx, 0, 0, ctx->framebuffer.width,
+				       ctx->framebuffer.height);
+		set_depth_range_no_notify(ctx, 0, 1);
+		ctx->pipe->set_viewport_state(ctx->pipe, &ctx->viewport);
 	}
 
 	// fs
@@ -181,7 +203,164 @@ void gl_current_color(struct gl_context *ctx, GLfloat red, GLfloat green,
 		(union pipe_color_union){ red, green, blue, alpha };
 }
 
-void gl_record_error(struct gl_context *ctx, GLenum error)
+void gl_error(struct gl_context *ctx, GLenum error)
 {
 	ctx->last_error = error;
+}
+
+void gl_clear(struct gl_context *ctx, GLbitfield mask)
+{
+	struct pipe_clear_state *clear_state = &ctx->clear_state;
+
+	ctx->pipe->clear(ctx->pipe, mask, &clear_state->color,
+			 clear_state->depth, clear_state->stencil);
+}
+
+void gl_flush(struct gl_context *ctx)
+{
+	ctx->pipe->flush(ctx->pipe);
+}
+
+void gl_set_enable(struct gl_context *ctx, GLenum cap, GLboolean state)
+{
+	switch (cap) {
+	case GL_DEPTH_TEST:
+		ctx->depth_stencil.depth.enabled = state;
+		gl_depth_stencil_alpha(ctx);
+		break;
+	default:
+		gl_error(ctx, GL_INVALID_ENUM);
+	}
+}
+
+void gl_client_state(struct gl_context *ctx, GLenum array, GLboolean state)
+{
+	switch (array) {
+	case GL_VERTEX_ARRAY:
+		ctx->vertex_pointer_state.enabled = state;
+		break;
+	case GL_COLOR_ARRAY:
+		ctx->color_pointer_state.enabled = state;
+		break;
+	default:
+		gl_error(ctx, GL_INVALID_ENUM);
+	}
+}
+
+void gl_pointer_array(struct gl_context *ctx,
+		      struct pipe_vertex_array_state *state, GLint sizeMin,
+		      GLint sizeMax, GLint size, GLenum type, GLsizei stride,
+		      const void *pointer)
+{
+	if (size < sizeMin || size > sizeMax) {
+		gl_error(ctx, GL_INVALID_VALUE);
+		return;
+	}
+	if (type != GL_FLOAT) {
+		gl_error(ctx, GL_INVALID_ENUM);
+		return;
+	}
+	if (stride < 0) {
+		gl_error(ctx, GL_INVALID_VALUE);
+		return;
+	}
+
+	state->size = size;
+	state->stride = stride;
+	state->pointer = pointer;
+}
+
+void gl_depth_range(struct gl_context *ctx, GLfloat n, GLfloat f)
+{
+	set_depth_range_no_notify(ctx, n, f);
+	ctx->pipe->set_viewport_state(ctx->pipe, &ctx->viewport);
+}
+
+void gl_viewport(struct gl_context *ctx, GLint x, GLint y, GLsizei width,
+		 GLsizei height)
+{
+	set_viewport_no_notify(ctx, x, y, width, height);
+	ctx->pipe->set_viewport_state(ctx->pipe, &ctx->viewport);
+}
+
+void gl_depth_stencil_alpha(struct gl_context *ctx)
+{
+	ctx->pipe->set_depth_stencil_alpha_state(ctx->pipe,
+						 &ctx->depth_stencil);
+}
+
+void gl_draw_arrays(struct gl_context *ctx, GLenum mode, GLint first,
+		    GLsizei count)
+{
+	struct pipe_vertex_array_state *vertex_state =
+		&ctx->vertex_pointer_state;
+	struct pipe_vertex_array_state *color_state = &ctx->color_pointer_state;
+
+	if (!vertex_state->enabled) {
+		return;
+	}
+
+	struct pipe_draw_info info;
+	struct pipe_vertex_buffer vb;
+	struct pipe_resource *rsc;
+	struct nv_shaded_vertex *buffer;
+	uint32_t stride = sizeof(struct nv_shaded_vertex);
+	uint32_t vertex_stride = vertex_state->stride ?
+					 vertex_state->stride / sizeof(float) :
+					 vertex_state->size;
+	uint32_t color_stride = 0;
+
+	rsc = ctx->pipe->resource_create(ctx->pipe, stride, count);
+	if (rsc == NULL) {
+		gl_error(ctx, GL_OUT_OF_MEMORY);
+		return;
+	}
+
+	buffer = (struct nv_shaded_vertex *)ctx->pipe->resource_transfer_map(
+		ctx->pipe, rsc);
+
+	int i;
+	const float *pointer =
+		(float *)vertex_state->pointer + first * vertex_stride;
+	const float *scale = ctx->viewport.scale;
+	const float *translate = ctx->viewport.translate;
+	const float *color = ctx->current_color.f;
+	if (color_state->enabled) {
+		color_stride = color_state->stride ?
+				       color_state->stride / sizeof(float) :
+				       color_state->size;
+		color = (float *)color_state->pointer + first * color_stride;
+	}
+
+	for (i = 0; i < count; i++, pointer += vertex_stride) {
+		buffer[i] = (struct nv_shaded_vertex){
+			.x = (int16_t)((pointer[0] * scale[0]) * 16),
+			.y = (int16_t)((pointer[1] * -scale[1]) * 16),
+			.z = 0.0,
+			.rhw = 1.0,
+			.r = color[0],
+			.g = color[1],
+			.b = color[2],
+		};
+		if (vertex_state->size == 3) {
+			buffer[i].z = pointer[2] * scale[2] + translate[2];
+		}
+		color += color_stride;
+	};
+
+	memset(&info, 0, sizeof(struct pipe_draw_info));
+	memset(&vb, 0, sizeof(struct pipe_vertex_buffer));
+
+	info.mode = mode;
+	info.start = 0;
+	info.count = count;
+
+	vb.stride = stride;
+	vb.is_user_buffer = 1;
+	vb.buffer_offset = 0;
+	vb.buffer.resource = rsc;
+
+	ctx->pipe->set_vertex_buffers(ctx->pipe, &vb);
+	ctx->pipe->draw_vbo(ctx->pipe, &info);
+	ctx->pipe->resource_destroy(ctx->pipe, rsc);
 }

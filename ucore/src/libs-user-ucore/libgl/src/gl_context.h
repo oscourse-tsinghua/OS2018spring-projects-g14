@@ -43,6 +43,21 @@ int gl_swap_buffers(struct gl_context *ctx);
 
 void gl_current_color(struct gl_context *ctx, GLfloat red, GLfloat green,
 		      GLfloat blue, GLfloat alpha);
-void gl_record_error(struct gl_context *ctx, GLenum error);
+void gl_error(struct gl_context *ctx, GLenum error);
+
+void gl_clear(struct gl_context *ctx, GLbitfield mask);
+void gl_flush(struct gl_context *ctx);
+void gl_set_enable(struct gl_context *ctx, GLenum cap, GLboolean state);
+void gl_client_state(struct gl_context *ctx, GLenum array, GLboolean state);
+void gl_pointer_array(struct gl_context *ctx,
+		      struct pipe_vertex_array_state *state, GLint sizeMin,
+		      GLint sizeMax, GLint size, GLenum type, GLsizei stride,
+		      const void *pointer);
+void gl_depth_range(struct gl_context *ctx, GLfloat n, GLfloat f);
+void gl_viewport(struct gl_context *ctx, GLint x, GLint y, GLsizei width,
+		 GLsizei height);
+void gl_depth_stencil_alpha(struct gl_context *ctx);
+void gl_draw_arrays(struct gl_context *ctx, GLenum mode, GLint first,
+		    GLsizei count);
 
 #endif // GL_CONTEXT_H

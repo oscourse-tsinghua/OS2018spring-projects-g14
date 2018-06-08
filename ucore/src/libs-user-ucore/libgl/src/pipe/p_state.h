@@ -87,7 +87,6 @@ struct pipe_draw_info {
 };
 
 struct pipe_clear_state {
-	unsigned buffers;
 	union pipe_color_union color;
 	double depth;
 	unsigned stencil;
