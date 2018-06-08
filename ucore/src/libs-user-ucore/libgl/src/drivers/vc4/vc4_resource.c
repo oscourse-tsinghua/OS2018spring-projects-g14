@@ -49,7 +49,7 @@ static void *vc4_resource_transfer_map(struct pipe_context *pctx,
 	return vc4_bo_map(rsc->bo);
 }
 
-void vc4_resouce_init(struct pipe_context *pctx)
+void vc4_resource_init(struct pipe_context *pctx)
 {
 	pctx->resource_create = vc4_resource_create;
 	pctx->resource_destroy = vc4_resource_destroy;

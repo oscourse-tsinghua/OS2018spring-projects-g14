@@ -84,7 +84,7 @@ struct vc4_exec_info {
 		 * shader state.
 		 */
 		uint32_t max_index;
-	} *shader_state;
+	} * shader_state;
 
 	/** How many shader states the user declared they were using. */
 	uint32_t shader_state_size;
@@ -140,6 +140,7 @@ int vc4_validate_bin_cl(struct device *dev, void *validated, void *unvalidated,
 
 int vc4_validate_shader_recs(struct device *dev, struct vc4_exec_info *exec);
 
+struct vc4_bo *vc4_use_bo(struct vc4_exec_info *exec, uint32_t hindex);
 int vc4_get_rcl(struct device *dev, struct vc4_exec_info *exec);
 
 #endif // VC4_DRV_H

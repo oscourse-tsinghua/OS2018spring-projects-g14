@@ -15,6 +15,6 @@ static inline struct vc4_resource *vc4_resource(struct pipe_resource *prsc)
 	return (struct vc4_resource *)prsc;
 }
 
-void vc4_resouce_init(struct pipe_context *pctx);
+void vc4_resource_init(struct pipe_context *pctx);
 
 #endif // VC4_RESOURCE_H

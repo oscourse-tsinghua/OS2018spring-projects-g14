@@ -56,6 +56,12 @@ struct vc4_context {
 	struct vc4_cl bo_pointers;
 	uint32_t shader_rec_count;
 
+	/** @{ Surfaces to submit rendering for. */
+	struct pipe_surface *color_read;
+	struct pipe_surface *color_write;
+	struct pipe_surface *zs_read;
+	struct pipe_surface *zs_write;
+	/** @} */
 	/** @{
 	 * Bounding box of the scissor across all queued drawing.
 	 *
@@ -122,6 +128,7 @@ struct vc4_context {
 	struct pipe_vertex_buffer vertexbuf;
 	/** @} */
 
+	/** List of all bos. */
 	list_entry_t bo_list;
 };
 
@@ -138,6 +145,9 @@ void vc4_program_init(struct pipe_context *pctx);
 
 void vc4_context_destroy(struct pipe_context *pctx);
 void vc4_flush(struct pipe_context *pctx);
+void vc4_job_init(struct vc4_context *vc4);
+void vc4_job_submit(struct vc4_context *vc4);
+void vc4_job_reset(struct vc4_context *vc4);
 
 void vc4_update_compiled_shaders(struct vc4_context *vc4, uint8_t prim_mode);
 

@@ -110,12 +110,14 @@ static int validate_nv_shader_state(VALIDATE_ARGS)
 static int validate_tile_binning_config(VALIDATE_ARGS)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	uint8_t flags;
 	uint32_t tile_state_size;
 	uint32_t tile_count, bin_addr;
 
 	exec->bin_tiles_x = *(uint8_t *)(untrusted + 12);
 	exec->bin_tiles_y = *(uint8_t *)(untrusted + 13);
 	tile_count = exec->bin_tiles_x * exec->bin_tiles_y;
+	flags = *(uint8_t *)(untrusted + 14);
 
 	bin_addr = vc4->bin_bo->paddr;
 
@@ -123,6 +125,15 @@ static int validate_tile_binning_config(VALIDATE_ARGS)
 	 * the start of a BO containing both it and the tile alloc.
 	 */
 	tile_state_size = 48 * tile_count;
+
+	*(uint8_t *)(validated + 14) =
+		((flags & ~(VC4_BIN_CONFIG_ALLOC_INIT_BLOCK_SIZE_MASK |
+			    VC4_BIN_CONFIG_ALLOC_BLOCK_SIZE_MASK)) |
+		 VC4_BIN_CONFIG_AUTO_INIT_TSDA |
+		 VC4_SET_FIELD(VC4_BIN_CONFIG_ALLOC_INIT_BLOCK_SIZE_32,
+			       VC4_BIN_CONFIG_ALLOC_INIT_BLOCK_SIZE) |
+		 VC4_SET_FIELD(VC4_BIN_CONFIG_ALLOC_BLOCK_SIZE_128,
+			       VC4_BIN_CONFIG_ALLOC_BLOCK_SIZE));
 
 	/* Since the tile alloc array will follow us, align. */
 	exec->tile_alloc_offset = bin_addr + ROUNDUP(tile_state_size, 4096);

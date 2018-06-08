@@ -49,6 +49,15 @@ struct pipe_framebuffer_state {
 };
 
 /**
+ * A view into a texture that can be bound to a color render target /
+ * depth stencil attachment point.
+ */
+struct pipe_surface {
+	struct pipe_resource *texture; /**< resource into which this is a view  */
+	struct pipe_context *context; /**< context this surface belongs to */
+};
+
+/**
  * A memory object/resource such as a vertex buffer or texture.
  */
 struct pipe_resource {

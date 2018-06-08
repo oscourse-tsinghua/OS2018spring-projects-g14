@@ -17,8 +17,6 @@
 #include <proc.h>
 #include <inode.h>
 
-#define false	(0)
-
 /*
    vmm design include two parts: mm_struct (mm) & vma_struct (vma)
    mm is the memory manager for the set of continuous virtual memory
