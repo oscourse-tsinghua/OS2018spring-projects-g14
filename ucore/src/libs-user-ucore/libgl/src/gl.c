@@ -159,11 +159,7 @@ GL_API GLenum GL_APIENTRY glGetError(void)
 {
 	GET_CURRENT_CONTEXT(ctx);
 
-	if (!ctx) {
-		return GL_NO_ERROR;
-	} else {
-		return ctx->last_error;
-	}
+	return gl_get_error(ctx);
 }
 
 GL_API void GL_APIENTRY glVertexPointer(GLint size, GLenum type, GLsizei stride,

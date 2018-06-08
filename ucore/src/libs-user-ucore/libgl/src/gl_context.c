@@ -205,7 +205,16 @@ void gl_current_color(struct gl_context *ctx, GLfloat red, GLfloat green,
 
 void gl_error(struct gl_context *ctx, GLenum error)
 {
-	ctx->last_error = error;
+	if (ctx && ctx->last_error == GL_NO_ERROR) {
+		ctx->last_error = error;
+	}
+}
+
+GLenum gl_get_error(struct gl_context *ctx)
+{
+	GLenum e = ctx->last_error;
+	ctx->last_error = GL_NO_ERROR;
+	return e;
 }
 
 void gl_clear(struct gl_context *ctx, GLbitfield mask)

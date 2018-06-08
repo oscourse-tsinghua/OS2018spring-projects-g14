@@ -44,6 +44,7 @@ int gl_swap_buffers(struct gl_context *ctx);
 void gl_current_color(struct gl_context *ctx, GLfloat red, GLfloat green,
 		      GLfloat blue, GLfloat alpha);
 void gl_error(struct gl_context *ctx, GLenum error);
+GLenum gl_get_error(struct gl_context *ctx);
 
 void gl_clear(struct gl_context *ctx, GLbitfield mask);
 void gl_flush(struct gl_context *ctx);
