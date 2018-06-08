@@ -94,7 +94,7 @@ void draw()
 	glDrawArrays(GL_TRIANGLE_FAN, 18, 6);
 
 	glFlush();
-	eglSwapBuffers(dpy, ctx);
+	eglSwapBuffers(dpy);
 }
 
 int main(int argc, char *argv[])

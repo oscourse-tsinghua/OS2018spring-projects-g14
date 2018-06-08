@@ -19,6 +19,6 @@ EGLDisplay eglGetDisplay(EGLNativeDisplayType display_id);
 EGLContext eglCreateContext(EGLDisplay dpy);
 EGLBoolean eglMakeCurrent(EGLDisplay dpy, EGLContext ctx);
 EGLBoolean eglDestroyContext(EGLDisplay dpy, EGLContext ctx);
-EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLContext ctx);
+EGLBoolean eglSwapBuffers(EGLDisplay dpy);
 
 #endif

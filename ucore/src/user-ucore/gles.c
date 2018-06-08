@@ -60,7 +60,7 @@ void draw()
 
 	glFlush();
 
-	eglSwapBuffers(dpy, ctx);
+	eglSwapBuffers(dpy);
 }
 
 int main(int argc, char *argv[])

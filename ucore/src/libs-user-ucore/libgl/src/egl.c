@@ -61,7 +61,7 @@ EGLBoolean eglDestroyContext(EGLDisplay dpy, EGLContext ctx)
 	return 1;
 }
 
-EGLBoolean eglSwapBuffers(EGLDisplay dpy, EGLContext ctx)
+EGLBoolean eglSwapBuffers(EGLDisplay dpy)
 {
 	GET_CURRENT_CONTEXT(context);
 

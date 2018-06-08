@@ -54,7 +54,7 @@ void draw(int frame)
 	glDisableClientState(GL_VERTEX_ARRAY);
 
 	glFlush();
-	eglSwapBuffers(dpy, ctx);
+	eglSwapBuffers(dpy);
 }
 
 int main(int argc, char *argv[])

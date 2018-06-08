@@ -79,7 +79,7 @@ void draw()
 	glDisableClientState(GL_VERTEX_ARRAY);
 
 	glFlush();
-	eglSwapBuffers(dpy, ctx);
+	eglSwapBuffers(dpy);
 }
 
 int main(int argc, char *argv[])
