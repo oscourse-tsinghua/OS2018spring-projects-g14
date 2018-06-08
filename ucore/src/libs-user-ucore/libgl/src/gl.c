@@ -3,7 +3,7 @@
 #include "gl_context.h"
 #include "pipe/p_context.h"
 
-struct gl_context *context = NULL;
+extern struct gl_context *context;
 
 GL_API void GL_APIENTRY glClearColor(GLfloat red, GLfloat green, GLfloat blue,
 				     GLfloat alpha)

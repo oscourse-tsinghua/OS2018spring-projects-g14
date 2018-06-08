@@ -1,11 +1,24 @@
 #ifndef GL_CONTEXT_H
 #define GL_CONTEXT_H
 
+#include <fb.h>
+
 #include <GLES/gl.h>
 
 #include "pipe/p_state.h"
 
+#define GET_CURRENT_CONTEXT(C) struct gl_context *C = gl_current_context()
+
+struct gl_screen {
+	int fb_fd;
+	int gpu_fd;
+	uint32_t screen_size;
+	uint32_t double_buffer_offset;
+	struct fb_var_screeninfo var;
+};
+
 struct gl_context {
+	struct gl_screen screen;
 	struct pipe_context *pipe;
 
 	struct pipe_viewport_state viewport;
@@ -19,13 +32,17 @@ struct gl_context {
 	GLenum last_error;
 };
 
-void gl_default_state(struct gl_context *ctx);
+inline struct gl_context *gl_current_context(void);
+
+struct gl_context *gl_context_create(void);
+void gl_context_destroy(struct gl_context *ctx);
+
+int gl_create_window(struct gl_context *ctx);
+int gl_default_state(struct gl_context *ctx);
+int gl_swap_buffers(struct gl_context *ctx);
 
 void gl_current_color(struct gl_context *ctx, GLfloat red, GLfloat green,
 		      GLfloat blue, GLfloat alpha);
 void gl_record_error(struct gl_context *ctx, GLenum error);
-
-struct gl_context *gl_context_create(int fd);
-void gl_context_destroy(struct gl_context *ctx);
 
 #endif // GL_CONTEXT_H
