@@ -29,6 +29,34 @@ static int vc4_allocate_bin_bo(struct device *dev)
 	return 0;
 }
 
+static int vc4_bind_fb_bo(struct device *dev)
+{
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
+	struct vc4_bo *bo;
+	struct fb_info *fb;
+
+	bo = (struct vc4_bo *)kmalloc(sizeof(struct vc4_bo));
+	if (bo == NULL)
+		return -E_NOMEM;
+
+	fb = get_fb_info();
+	if (fb == NULL)
+		return -E_NODEV;
+
+	unsigned long screen_size; /* Amount of ioremapped VRAM or 0 */
+	unsigned long fb_bus_address; /* Physical address */
+
+	bo->size = fb->screen_size;
+	bo->handle = 0;
+	bo->paddr = fb->fb_bus_address;
+	bo->vaddr = fb->screen_base;
+	list_init(&bo->unref_head);
+
+	vc4->fb_bo = bo;
+
+	return 0;
+}
+
 static int vc4_probe(struct device *dev)
 {
 	struct vc4_dev *vc4;
@@ -60,12 +88,15 @@ static int vc4_probe(struct device *dev)
 	}
 
 	vc4->dev = dev;
-	vc4->fb = get_fb_info();
 	vc4->handle_bo_map = (struct vc4_bo *)(vc4 + 1);
 	dev->driver_data = vc4;
 
 	bo_map_init(vc4->handle_bo_map);
 
+	if ((ret = vc4_bind_fb_bo(dev))) {
+		kprintf("VC4: cannot bind framebuffer bo.\n");
+		goto fail;
+	}
 	if ((ret = vc4_allocate_bin_bo(dev))) {
 		kprintf("VC4: cannot alloc bin bo.\n");
 		goto fail;
@@ -84,6 +115,7 @@ out:
 
 static void vc4_gem_destroy()
 {
+	// TODO
 }
 
 static int vc4_open(struct device *dev, uint32_t open_flags)

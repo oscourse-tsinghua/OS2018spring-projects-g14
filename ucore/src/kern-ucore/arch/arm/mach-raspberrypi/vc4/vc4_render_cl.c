@@ -17,6 +17,23 @@ struct vc4_rcl_setup {
 };
 
 /*
+ * Emits a no-op STORE_TILE_BUFFER_GENERAL.
+ *
+ * If we emit a PACKET_TILE_COORDINATES, it must be followed by a store of
+ * some sort before another load is triggered.
+ */
+static void vc4_store_before_load(struct vc4_cl *rcl)
+{
+	cl_u8(rcl, VC4_PACKET_STORE_TILE_BUFFER_GENERAL);
+	cl_u16(rcl, VC4_SET_FIELD(VC4_LOADSTORE_TILE_BUFFER_NONE,
+				  VC4_LOADSTORE_TILE_BUFFER_BUFFER) |
+			    VC4_STORE_TILE_BUFFER_DISABLE_COLOR_CLEAR |
+			    VC4_STORE_TILE_BUFFER_DISABLE_ZS_CLEAR |
+			    VC4_STORE_TILE_BUFFER_DISABLE_VG_MASK_CLEAR);
+	cl_u32(rcl, 0); /* no address, since we're in None mode */
+}
+
+/*
  * Emits a PACKET_TILE_COORDINATES if one isn't already pending.
  *
  * The tile coordinates packet triggers a pending load if there is one, are
@@ -37,6 +54,28 @@ static void emit_tile(struct vc4_exec_info *exec, struct vc4_rcl_setup *setup,
 	struct vc4_cl *rcl = &setup->rcl;
 	bool has_bin = args->bin_cl_size != 0;
 
+	/* Note that the load doesn't actually occur until the
+	 * tile coords packet is processed, and only one load
+	 * may be outstanding at a time.
+	 */
+	if (setup->color_read) {
+		cl_u8(rcl, VC4_PACKET_LOAD_TILE_BUFFER_GENERAL);
+		cl_u16(rcl, args->color_read.bits);
+		cl_u32(rcl, setup->color_read->paddr + args->color_read.offset);
+	}
+
+	if (setup->zs_read) {
+		if (setup->color_read) {
+			/* Exec previous load. */
+			vc4_tile_coordinates(rcl, x, y);
+			vc4_store_before_load(rcl);
+		}
+
+		cl_u8(rcl, VC4_PACKET_LOAD_TILE_BUFFER_GENERAL);
+		cl_u16(rcl, args->zs_read.bits);
+		cl_u32(rcl, setup->zs_read->paddr + args->zs_read.offset);
+	}
+
 	/* Clipping depends on tile coordinates having been
 	 * emitted, so we always need one here.
 	 */
@@ -54,17 +93,37 @@ static void emit_tile(struct vc4_exec_info *exec, struct vc4_rcl_setup *setup,
 			     (y * exec->bin_tiles_x + x) * 32));
 	}
 
-	// if (setup->color_write)
-	if (last)
-		cl_u8(rcl, VC4_PACKET_STORE_MS_TILE_BUFFER_AND_EOF);
-	else
-		cl_u8(rcl, VC4_PACKET_STORE_MS_TILE_BUFFER);
+	if (setup->zs_write) {
+		bool last_tile_write = !setup->color_write;
+
+		cl_u8(rcl, VC4_PACKET_STORE_TILE_BUFFER_GENERAL);
+		cl_u16(rcl,
+		       args->zs_write.bits |
+			       (last_tile_write ?
+					0 :
+					VC4_STORE_TILE_BUFFER_DISABLE_COLOR_CLEAR));
+		cl_u32(rcl, (setup->zs_write->paddr + args->zs_write.offset) |
+				    ((last && last_tile_write) ?
+					     VC4_LOADSTORE_TILE_BUFFER_EOF :
+					     0));
+	}
+
+	if (setup->color_write) {
+		if (setup->zs_write) {
+			/* Reset after previous store */
+			vc4_tile_coordinates(rcl, x, y);
+		}
+
+		if (last)
+			cl_u8(rcl, VC4_PACKET_STORE_MS_TILE_BUFFER_AND_EOF);
+		else
+			cl_u8(rcl, VC4_PACKET_STORE_MS_TILE_BUFFER);
+	}
 }
 
 static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 			     struct vc4_rcl_setup *setup)
 {
-	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct drm_vc4_submit_cl *args = exec->args;
 	bool has_bin = args->bin_cl_size != 0;
 	uint8_t min_x_tile = args->min_x_tile;
@@ -85,13 +144,32 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 			VC4_PACKET_STORE_TILE_BUFFER_GENERAL_SIZE;
 	}
 
+	if (setup->color_read) {
+		loop_body_size += VC4_PACKET_LOAD_TILE_BUFFER_GENERAL_SIZE;
+	}
+	if (setup->zs_read) {
+		if (setup->color_read) {
+			loop_body_size += VC4_PACKET_TILE_COORDINATES_SIZE;
+			loop_body_size +=
+				VC4_PACKET_STORE_TILE_BUFFER_GENERAL_SIZE;
+		}
+		loop_body_size += VC4_PACKET_LOAD_TILE_BUFFER_GENERAL_SIZE;
+	}
+
 	if (has_bin) {
 		size += VC4_PACKET_WAIT_ON_SEMAPHORE_SIZE;
 		loop_body_size += VC4_PACKET_BRANCH_TO_SUB_LIST_SIZE;
 	}
 
-	// if (setup->color_write)
-	loop_body_size += VC4_PACKET_STORE_MS_TILE_BUFFER_SIZE;
+	if (setup->zs_write)
+		loop_body_size += VC4_PACKET_STORE_TILE_BUFFER_GENERAL_SIZE;
+	if (setup->color_write)
+		loop_body_size += VC4_PACKET_STORE_MS_TILE_BUFFER_SIZE;
+
+	/* We need a VC4_PACKET_TILE_COORDINATES in between each store. */
+	loop_body_size +=
+		VC4_PACKET_TILE_COORDINATES_SIZE *
+		((setup->color_write != NULL) + (setup->zs_write != NULL) - 1);
 
 	size += xtiles * ytiles * loop_body_size;
 
@@ -125,7 +203,9 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 	}
 
 	cl_u8(rcl, VC4_PACKET_TILE_RENDERING_MODE_CONFIG);
-	cl_u32(rcl, vc4->fb->fb_bus_address + args->color_write.offset);
+	cl_u32(rcl, (setup->color_write ? (setup->color_write->paddr +
+					   args->color_write.offset) :
+					  0));
 	cl_u16(rcl, args->width);
 	cl_u16(rcl, args->height);
 	cl_u16(rcl, args->color_write.bits);
@@ -148,7 +228,8 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 
 static int vc4_rcl_surface_setup(struct vc4_exec_info *exec,
 				 struct vc4_bo **obj,
-				 struct drm_vc4_submit_rcl_surface *surf)
+				 struct drm_vc4_submit_rcl_surface *surf,
+				 bool is_depth)
 {
 	uint8_t tiling =
 		VC4_GET_FIELD(surf->bits, VC4_LOADSTORE_TILE_BUFFER_TILING);
@@ -161,7 +242,10 @@ static int vc4_rcl_surface_setup(struct vc4_exec_info *exec,
 	if (surf->hindex == ~0)
 		return 0;
 
-	*obj = vc4_use_bo(exec, surf->hindex);
+	if (is_depth)
+		*obj = vc4_use_bo(exec, surf->hindex);
+	else
+		*obj = exec->fb_bo;
 	if (!*obj)
 		return -E_INVAL;
 
@@ -229,7 +313,7 @@ static int vc4_rcl_render_config_surface_setup(
 	if (surf->hindex == ~0)
 		return 0;
 
-	*obj = vc4_use_bo(exec, surf->hindex);
+	*obj = exec->fb_bo;
 	if (!*obj)
 		return -E_INVAL;
 
@@ -280,7 +364,8 @@ int vc4_get_rcl(struct device *dev, struct vc4_exec_info *exec)
 
 	memset(&setup, 0, sizeof(struct vc4_rcl_setup));
 
-	ret = vc4_rcl_surface_setup(exec, &setup.color_read, &args->color_read);
+	ret = vc4_rcl_surface_setup(exec, &setup.color_read, &args->color_read,
+				    false);
 	if (ret)
 		return ret;
 
@@ -289,21 +374,22 @@ int vc4_get_rcl(struct device *dev, struct vc4_exec_info *exec)
 	if (ret)
 		return ret;
 
-	ret = vc4_rcl_surface_setup(exec, &setup.zs_read, &args->zs_read);
+	ret = vc4_rcl_surface_setup(exec, &setup.zs_read, &args->zs_read, true);
 	if (ret)
 		return ret;
 
-	ret = vc4_rcl_surface_setup(exec, &setup.zs_write, &args->zs_write);
+	ret = vc4_rcl_surface_setup(exec, &setup.zs_write, &args->zs_write,
+				    true);
 	if (ret)
 		return ret;
 
 	/* We shouldn't even have the job submitted to us if there's no
 	 * surface to write out.
+	 */
 	if (!setup.color_write && !setup.zs_write) {
 		kprintf("vc4: RCL requires color or Z/S write\n");
 		return -E_INVAL;
 	}
-	*/
 
 	return vc4_create_rcl_bo(dev, exec, &setup);
 }

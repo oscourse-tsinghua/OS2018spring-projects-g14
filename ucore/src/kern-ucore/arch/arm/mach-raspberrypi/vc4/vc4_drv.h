@@ -22,7 +22,8 @@ struct vc4_dev {
 	/* Size of blocks allocated within bin_bo. */
 	uint32_t bin_alloc_size;
 
-	struct fb_info *fb;
+	/* Special bo for framebuffer, does not need to be freed. */
+	struct vc4_bo *fb_bo;
 
 	struct vc4_bo *handle_bo_map;
 };
@@ -55,6 +56,7 @@ struct vc4_exec_info {
 	 * Command validation will use indices into this array.
 	 */
 	struct vc4_bo **bo;
+	struct vc4_bo *fb_bo;
 	uint32_t bo_count;
 
 	/* List of other BOs used in the job that need to be released

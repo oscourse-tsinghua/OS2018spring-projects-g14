@@ -55,7 +55,7 @@ static void vc4_submit_setup_rcl_render_config_surface(
 {
 	struct pipe_framebuffer_state *fb = &vc4->framebuffer;
 
-	submit_surf->hindex = ~0;
+	submit_surf->hindex = 0;
 	submit_surf->offset = fb->offset;
 
 	submit_surf->bits =

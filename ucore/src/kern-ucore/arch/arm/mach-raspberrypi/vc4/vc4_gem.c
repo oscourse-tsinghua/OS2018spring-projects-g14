@@ -107,6 +107,7 @@ static void vc4_queue_submit(struct device *dev, struct vc4_exec_info *exec)
  */
 static int vc4_cl_lookup_bos(struct device *dev, struct vc4_exec_info *exec)
 {
+	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct drm_vc4_submit_cl *args = exec->args;
 	struct mm_struct *mm = current->mm;
 	uint32_t *handles;
@@ -120,6 +121,7 @@ static int vc4_cl_lookup_bos(struct device *dev, struct vc4_exec_info *exec)
 		return 0;
 	}
 
+	exec->fb_bo = vc4->fb_bo;
 	exec->bo = (struct vc4_bo **)kmalloc(exec->bo_count *
 					     sizeof(struct vc4_bo *));
 	if (!exec->bo) {
