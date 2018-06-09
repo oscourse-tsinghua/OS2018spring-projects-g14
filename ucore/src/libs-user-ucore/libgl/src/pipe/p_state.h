@@ -5,6 +5,26 @@
 
 #include "p_defines.h"
 
+/**
+ * Implementation limits
+ */
+#define PIPE_MAX_ATTRIBS          32
+#define PIPE_MAX_CLIP_PLANES       8
+#define PIPE_MAX_COLOR_BUFS        8
+#define PIPE_MAX_CONSTANT_BUFFERS 32
+#define PIPE_MAX_SAMPLERS         18 /* 16 public + 2 driver internal */
+#define PIPE_MAX_SHADER_INPUTS    80 /* 32 GENERIC + 32 PATCH + 16 others */
+#define PIPE_MAX_SHADER_OUTPUTS   80 /* 32 GENERIC + 32 PATCH + 16 others */
+#define PIPE_MAX_SHADER_SAMPLER_VIEWS 32
+#define PIPE_MAX_SHADER_BUFFERS   32
+#define PIPE_MAX_SHADER_IMAGES    32
+#define PIPE_MAX_TEXTURE_LEVELS   16
+#define PIPE_MAX_SO_BUFFERS        4
+#define PIPE_MAX_SO_OUTPUTS       64
+#define PIPE_MAX_VIEWPORTS        16
+#define PIPE_MAX_CLIP_OR_CULL_DISTANCE_COUNT 8
+#define PIPE_MAX_CLIP_OR_CULL_DISTANCE_ELEMENT_COUNT 2
+
 struct pipe_viewport_state {
 	float scale[3];
 	float translate[3];
@@ -42,10 +62,13 @@ struct pipe_depth_stencil_alpha_state {
 };
 
 struct pipe_framebuffer_state {
-	uint32_t width, height;
-	uint32_t bits_per_pixel;
-	uint32_t offset;
-	void *screen_base;
+	unsigned width, height;
+
+	/** multiple color buffers for multiple render targets */
+	unsigned nr_cbufs;
+	struct pipe_surface *cbufs[PIPE_MAX_COLOR_BUFS];
+
+	struct pipe_surface *zsbuf; /**< Z/stencil buffer */
 };
 
 /**
@@ -55,13 +78,26 @@ struct pipe_framebuffer_state {
 struct pipe_surface {
 	struct pipe_resource *texture; /**< resource into which this is a view  */
 	struct pipe_context *context; /**< context this surface belongs to */
+
+	/* XXX should be pipe_format */
+	uint32_t cpp; /**< bytes per pixel */
+
+	uint32_t width; /**< logical width in pixels */
+	uint32_t height; /**< logical height in pixels */
+	uint32_t offset;
 };
 
 /**
  * A memory object/resource such as a vertex buffer or texture.
  */
 struct pipe_resource {
-	uint16_t array_size;
+	/* XXX should be pipe_format */
+	uint32_t cpp; /**< bytes per pixel */
+
+	uint32_t width0;
+	uint32_t height0;
+
+	uint32_t bind; /**< bitmask of PIPE_BIND_x */
 };
 
 /**

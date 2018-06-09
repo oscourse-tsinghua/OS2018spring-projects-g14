@@ -5,8 +5,10 @@
 
 #include "pipe/p_context.h"
 #include "pipe/p_state.h"
+
 #include "vc4_cl.h"
 #include "vc4_bufmgr.h"
+#include "vc4_resource.h"
 
 #define VC4_DIRTY_BLEND         (1 <<  0)
 #define VC4_DIRTY_RASTERIZER    (1 <<  1)

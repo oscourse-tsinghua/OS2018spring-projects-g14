@@ -15,6 +15,8 @@ struct gl_screen {
 	uint32_t screen_size;
 	uint32_t double_buffer_offset;
 	struct fb_var_screeninfo var;
+
+	struct pipe_resource *color_buf, *zs_buf;
 };
 
 struct gl_context {

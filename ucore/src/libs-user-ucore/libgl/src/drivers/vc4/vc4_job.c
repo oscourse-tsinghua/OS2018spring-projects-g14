@@ -46,26 +46,56 @@ static void vc4_submit_setup_rcl_surface(
 	struct vc4_context *vc4, struct drm_vc4_submit_rcl_surface *submit_surf,
 	struct pipe_surface *psurf, bool is_depth, bool is_write)
 {
-	submit_surf->hindex = ~0;
+	struct vc4_surface *surf = vc4_surface(psurf);
+
+	if (!surf) {
+		submit_surf->hindex = ~0;
+		return;
+	}
+
+	struct vc4_resource *rsc = vc4_resource(psurf->texture);
+	submit_surf->hindex = vc4_gem_hindex(vc4, rsc->bo);
+	submit_surf->offset = psurf->offset;
+
+	if (is_depth) {
+		submit_surf->bits =
+			VC4_SET_FIELD(VC4_LOADSTORE_TILE_BUFFER_ZS,
+				      VC4_LOADSTORE_TILE_BUFFER_BUFFER);
+	} else {
+		submit_surf->bits =
+			VC4_SET_FIELD(VC4_LOADSTORE_TILE_BUFFER_COLOR,
+				      VC4_LOADSTORE_TILE_BUFFER_BUFFER) |
+			VC4_SET_FIELD(
+				psurf->cpp == 2 ?
+					VC4_LOADSTORE_TILE_BUFFER_BGR565 :
+					VC4_LOADSTORE_TILE_BUFFER_RGBA8888,
+				VC4_LOADSTORE_TILE_BUFFER_FORMAT);
+	}
+	submit_surf->bits |=
+		VC4_SET_FIELD(surf->tiling, VC4_LOADSTORE_TILE_BUFFER_TILING);
 }
 
 static void vc4_submit_setup_rcl_render_config_surface(
 	struct vc4_context *vc4, struct drm_vc4_submit_rcl_surface *submit_surf,
 	struct pipe_surface *psurf)
 {
-	struct pipe_framebuffer_state *fb = &vc4->framebuffer;
+	struct vc4_surface *surf = vc4_surface(psurf);
 
-	// XXX temporary
-	submit_surf->hindex = vc4_gem_hindex(vc4, vc4_bo_alloc_fb(vc4));
-	submit_surf->offset = fb->offset;
+	if (!surf) {
+		submit_surf->hindex = ~0;
+		return;
+	}
+
+	struct vc4_resource *rsc = vc4_resource(psurf->texture);
+	submit_surf->hindex = vc4_gem_hindex(vc4, rsc->bo);
+	submit_surf->offset = psurf->offset;
 
 	submit_surf->bits =
-		VC4_SET_FIELD(fb->bits_per_pixel == 16 ?
+		VC4_SET_FIELD(psurf->cpp == 2 ?
 				      VC4_RENDER_CONFIG_FORMAT_BGR565 :
 				      VC4_RENDER_CONFIG_FORMAT_RGBA8888,
 			      VC4_RENDER_CONFIG_FORMAT) |
-		VC4_SET_FIELD(VC4_TILING_FORMAT_LINEAR,
-			      VC4_RENDER_CONFIG_MEMORY_FORMAT);
+		VC4_SET_FIELD(surf->tiling, VC4_RENDER_CONFIG_MEMORY_FORMAT);
 }
 
 void vc4_job_submit(struct vc4_context *vc4)

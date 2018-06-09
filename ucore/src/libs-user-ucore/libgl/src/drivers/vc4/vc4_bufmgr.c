@@ -11,6 +11,9 @@ struct vc4_bo *vc4_bo_alloc(struct vc4_context *vc4, size_t size)
 	struct vc4_bo *bo = NULL;
 	int ret;
 
+	if (!size)
+		return NULL;
+
 	size = ROUNDUP(size, 4096);
 
 	bo = (struct vc4_bo *)malloc(sizeof(struct vc4_bo));

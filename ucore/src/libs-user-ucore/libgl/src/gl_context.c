@@ -16,13 +16,13 @@ static void set_viewport_no_notify(struct gl_context *ctx, GLint x, GLint y,
 				   GLsizei width, GLsizei height)
 {
 	struct pipe_viewport_state *viewport = &ctx->viewport;
-	struct pipe_framebuffer_state *framebuffer = &ctx->framebuffer;
-	x = CLAMP(x, 0, framebuffer->width);
-	y = CLAMP(y, 0, framebuffer->height);
-	if (width > framebuffer->width)
-		width = framebuffer->width;
-	if (height > framebuffer->height)
-		height = framebuffer->height;
+	struct pipe_framebuffer_state *fb = &ctx->framebuffer;
+	x = CLAMP(x, 0, fb->width);
+	y = CLAMP(y, 0, fb->height);
+	if (width > fb->width)
+		width = fb->width;
+	if (height > fb->height)
+		height = fb->height;
 
 	float half_width = 0.5f * width;
 	float half_height = 0.5f * height;
@@ -75,6 +75,16 @@ void gl_context_destroy(struct gl_context *ctx)
 	if (ctx == NULL)
 		return;
 
+	struct gl_screen *screen = &ctx->screen;
+	struct pipe_framebuffer_state *fb = &ctx->framebuffer;
+	int i;
+
+	ctx->pipe->resource_destroy(ctx->pipe, screen->color_buf);
+	ctx->pipe->resource_destroy(ctx->pipe, screen->zs_buf);
+	ctx->pipe->surface_destroy(ctx->pipe, fb->zsbuf);
+	for (i = 0; i < fb->nr_cbufs; i++)
+		ctx->pipe->surface_destroy(ctx->pipe, fb->cbufs[i]);
+
 	ctx->pipe->destroy(ctx->pipe);
 
 	if (ctx->screen.gpu_fd) {
@@ -89,8 +99,8 @@ void gl_context_destroy(struct gl_context *ctx)
 
 int gl_create_window(struct gl_context *ctx)
 {
-	struct fb_var_screeninfo *var = &ctx->screen.var;
-	struct pipe_framebuffer_state *framebuffer = &ctx->framebuffer;
+	struct gl_screen *screen = &ctx->screen;
+	struct fb_var_screeninfo *var = &screen->var;
 
 	int ret = 0;
 	int fd = open("fb0:", O_RDWR);
@@ -103,28 +113,102 @@ int gl_create_window(struct gl_context *ctx)
 		goto out;
 	}
 
-	uint32_t size = var->xres_virtual * var->yres_virtual *
-			(var->bits_per_pixel >> 3);
+	uint8_t cpp = var->bits_per_pixel >> 3;
+	uint32_t size = var->xres_virtual * var->yres_virtual * cpp;
 
-	void *buf = (void *)sys_linux_mmap(0, size, fd, 0);
-	if (buf == NULL) {
-		cprintf("GLES: fb mmap failure: %e.\n", ret);
-		ret = -E_NOMEM;
-		goto out;
+	screen->fb_fd = fd;
+	screen->screen_size = size;
+	screen->double_buffer_offset = var->xres * var->yres * cpp;
+
+	struct pipe_resource resource_temp;
+	struct pipe_surface surface_temp;
+	struct pipe_surface *color_surf[2];
+	struct pipe_surface *zs_surf;
+	int num_cbufs = 2, i;
+
+	/* create color texture */
+	{
+		resource_temp.width0 = var->xres_virtual;
+		resource_temp.height0 = var->yres_virtual;
+		resource_temp.cpp = cpp;
+		resource_temp.bind =
+			(PIPE_BIND_RENDER_TARGET | PIPE_BIND_DISPLAY_TARGET);
+		screen->color_buf =
+			ctx->pipe->resource_create(ctx->pipe, &resource_temp);
+		if (screen->color_buf == NULL) {
+			cprintf("GLES: failed to create color texture.\n");
+			ret = -E_NOMEM;
+			goto out;
+		}
 	}
 
-	ctx->screen.fb_fd = fd;
-	ctx->screen.screen_size = size;
-	ctx->screen.double_buffer_offset =
-		var->xres * var->yres * (var->bits_per_pixel >> 3);
+	/* create color surface */
+	{
+		surface_temp.cpp = resource_temp.cpp;
+		surface_temp.width = var->xres;
+		surface_temp.height = var->yres;
+		surface_temp.offset = screen->double_buffer_offset;
+		color_surf[0] = ctx->pipe->create_surface(
+			ctx->pipe, screen->color_buf, &surface_temp);
+		if (color_surf[0] == NULL) {
+			cprintf("GLES: failed to get color surface 0.\n");
+			ret = -E_NOMEM;
+			goto out;
+		}
 
-	framebuffer->width = var->xres;
-	framebuffer->height = var->yres;
-	framebuffer->bits_per_pixel = var->bits_per_pixel;
-	framebuffer->offset = 0;
-	framebuffer->screen_base = buf;
+		surface_temp.offset = 0;
+		color_surf[1] = ctx->pipe->create_surface(
+			ctx->pipe, screen->color_buf, &surface_temp);
 
-	ctx->pipe->set_framebuffer_state(ctx->pipe, framebuffer);
+		if (color_surf[1] == NULL) {
+			cprintf("GLES: failed to get color surface 1.\n");
+			ret = -E_NOMEM;
+			goto out;
+		}
+	}
+
+	/* create Z texture */
+	{
+		resource_temp.width0 = var->xres;
+		resource_temp.height0 = var->yres;
+		resource_temp.cpp = sizeof(uint32_t);
+		resource_temp.bind = PIPE_BIND_DEPTH_STENCIL;
+		screen->zs_buf =
+			ctx->pipe->resource_create(ctx->pipe, &resource_temp);
+		if (screen->zs_buf == NULL) {
+			cprintf("GLES: failed to create Z texture.\n");
+			ret = -E_NOMEM;
+			goto out;
+		}
+		// ctx->pipe->resource_transfer_map(ctx->pipe, screen->zs_buf);
+	}
+
+	/* create Z surface */
+	{
+		surface_temp.cpp = resource_temp.cpp;
+		surface_temp.width = var->xres;
+		surface_temp.height = var->yres;
+		surface_temp.offset = 0;
+		zs_surf = ctx->pipe->create_surface(ctx->pipe, screen->zs_buf,
+						    &surface_temp);
+		if (zs_surf == NULL) {
+			cprintf("GLES: failed to get Z surface.\n");
+			ret = -E_NOMEM;
+			goto out;
+		}
+	}
+
+	/* set framebuffer state */
+	{
+		struct pipe_framebuffer_state *fb = &ctx->framebuffer;
+		fb->nr_cbufs = num_cbufs;
+		fb->width = var->xres;
+		fb->height = var->yres;
+		for (i = 0; i < num_cbufs; i++)
+			fb->cbufs[i] = color_surf[i];
+		fb->zsbuf = zs_surf;
+		ctx->pipe->set_framebuffer_state(ctx->pipe, fb);
+	}
 
 out:
 	return ret;
@@ -134,12 +218,12 @@ int gl_default_state(struct gl_context *ctx)
 {
 	int ret = 0;
 
-	// current_color
+	/* current_color */
 	{
 		gl_current_color(ctx, 1.0f, 1.0f, 1.0f, 1.0f);
 	}
 
-	// clear_state
+	/* clear_state */
 	{
 		struct pipe_clear_state *clear_state = &ctx->clear_state;
 		clear_state->depth = 1.0;
@@ -147,7 +231,7 @@ int gl_default_state(struct gl_context *ctx)
 		memset(clear_state->color, 0, sizeof(union pipe_color_union));
 	}
 
-	// depth_stencil_alpha
+	/* depth_stencil_alpha */
 	{
 		struct pipe_depth_stencil_alpha_state *depth_stencil =
 			&ctx->depth_stencil;
@@ -158,7 +242,7 @@ int gl_default_state(struct gl_context *ctx)
 							 depth_stencil);
 	}
 
-	// viewport
+	/* viewport */
 	{
 		set_viewport_no_notify(ctx, 0, 0, ctx->framebuffer.width,
 				       ctx->framebuffer.height);
@@ -166,7 +250,7 @@ int gl_default_state(struct gl_context *ctx)
 		ctx->pipe->set_viewport_state(ctx->pipe, &ctx->viewport);
 	}
 
-	// fs
+	/* fs */
 	{
 		if ((ret = ctx->pipe->create_fs_state(ctx->pipe))) {
 			goto out;
@@ -179,19 +263,21 @@ out:
 
 int gl_swap_buffers(struct gl_context *ctx)
 {
-	struct fb_var_screeninfo *var = &ctx->screen.var;
-	struct pipe_framebuffer_state *framebuffer = &ctx->framebuffer;
+	struct gl_screen *screen = &ctx->screen;
+	struct fb_var_screeninfo *var = &screen->var;
+	struct pipe_framebuffer_state *fb = &ctx->framebuffer;
 	int ret = 0;
 
-	var->yoffset = framebuffer->offset;
+	var->yoffset = fb->cbufs[0]->offset;
 	if ((ret = ioctl(ctx->screen.fb_fd, FBIOPAN_DISPLAY, var))) {
 		cprintf("GLES: fb pan display ioctl failure: %e.\n", ret);
 		return ret;
 	}
 
-	framebuffer->offset =
-		ctx->screen.double_buffer_offset - framebuffer->offset;
-	ctx->pipe->set_framebuffer_state(ctx->pipe, framebuffer);
+	struct pipe_surface *tmp = fb->cbufs[0];
+	fb->cbufs[0] = fb->cbufs[1];
+	fb->cbufs[1] = tmp;
+	ctx->pipe->set_framebuffer_state(ctx->pipe, fb);
 
 	return ret;
 }
@@ -298,6 +384,19 @@ void gl_depth_stencil_alpha(struct gl_context *ctx)
 						 &ctx->depth_stencil);
 }
 
+static inline struct pipe_resource *pipe_buffer_create(struct pipe_context *ctx,
+						       unsigned bind,
+						       unsigned size)
+{
+	struct pipe_resource buffer;
+	memset(&buffer, 0, sizeof buffer);
+	buffer.cpp = 1;
+	buffer.bind = bind;
+	buffer.width0 = size;
+	buffer.height0 = 1;
+	return ctx->resource_create(ctx, &buffer);
+}
+
 void gl_draw_arrays(struct gl_context *ctx, GLenum mode, GLint first,
 		    GLsizei count)
 {
@@ -319,7 +418,8 @@ void gl_draw_arrays(struct gl_context *ctx, GLenum mode, GLint first,
 					 vertex_state->size;
 	uint32_t color_stride = 0;
 
-	rsc = ctx->pipe->resource_create(ctx->pipe, stride, count);
+	rsc = pipe_buffer_create(ctx->pipe, PIPE_BIND_VERTEX_BUFFER,
+				 stride * count);
 	if (rsc == NULL) {
 		gl_error(ctx, GL_OUT_OF_MEMORY);
 		return;

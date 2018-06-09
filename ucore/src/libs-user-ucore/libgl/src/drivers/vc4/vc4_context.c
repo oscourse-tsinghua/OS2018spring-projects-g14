@@ -3,32 +3,11 @@
 #include "vc4_packet.h"
 #include "vc4_context.h"
 
-static void dump_fbo(struct vc4_context *vc4)
-{
-	struct pipe_framebuffer_state *fb = &vc4->framebuffer;
-	uint32_t center_x = fb->width / 2;
-	uint32_t center_y = fb->height / 2;
-
-	int x, y;
-	for (y = -6; y < 6; y++) {
-		for (x = -6; x < 6; x++) {
-			uint32_t bytes_per_pixel = fb->bits_per_pixel >> 3;
-			uint32_t addr =
-				((y + center_y) * fb->width + (x + center_x)) *
-				bytes_per_pixel;
-			char *ptr = fb->screen_base + fb->offset + addr;
-			int k;
-			for (k = bytes_per_pixel - 1; k >= 0; k--)
-				cprintf("%02x", *(ptr + k));
-			cprintf(" ");
-		}
-		cprintf("\n");
-	}
-}
-
 void vc4_flush(struct pipe_context *pctx)
 {
 	struct vc4_context *vc4 = vc4_context(pctx);
+	struct pipe_surface *cbuf = vc4->framebuffer.cbufs[0];
+	struct pipe_surface *zsbuf = vc4->framebuffer.zsbuf;
 
 	if (!vc4->needs_flush)
 		return;
@@ -55,9 +34,11 @@ void vc4_flush(struct pipe_context *pctx)
 		cl_u8(&vc4->bcl, VC4_PACKET_FLUSH);
 	}
 
+	vc4->color_write = cbuf;
+
 	vc4_job_submit(vc4);
 
-	// dump_fbo(vc4);
+	// vc4_dump_surface(cbuf);
 }
 
 void vc4_context_destroy(struct pipe_context *pctx)
