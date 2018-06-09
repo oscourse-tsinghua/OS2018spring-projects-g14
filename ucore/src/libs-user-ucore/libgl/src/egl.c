@@ -31,7 +31,7 @@ EGLContext eglCreateContext(EGLDisplay dpy)
 
 out:
 	if (ret) {
-		cprintf("GLES: eglCreateContext() failed.");
+		cprintf("GLES: eglCreateContext() failed.\n");
 	}
 	return ret ? EGL_NO_CONTEXT : context;
 }

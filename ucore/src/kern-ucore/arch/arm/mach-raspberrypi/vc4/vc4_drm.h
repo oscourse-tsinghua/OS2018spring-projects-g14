@@ -116,6 +116,9 @@ struct drm_vc4_create_bo {
 	__u32 size;
 	/** Returned GEM handle for the BO. */
 	__u32 handle;
+
+#define VC4_CREATE_BO_IS_FRAMEBUFFER			(1 << 0)
+	uint32_t flags;
 };
 
 struct drm_vc4_mmap_bo {

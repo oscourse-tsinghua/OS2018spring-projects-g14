@@ -214,7 +214,7 @@ static int vc4_get_bcl(struct device *dev, struct vc4_exec_info *exec)
 		goto fail;
 	}
 
-	bo = vc4_bo_create(dev, exec_size);
+	bo = vc4_bo_create(dev, exec_size, VC4_BO_TYPE_BCL);
 	if (bo == NULL) {
 		kprintf("vc4: Couldn't allocate BO for binning\n");
 		ret = -E_NOMEM;

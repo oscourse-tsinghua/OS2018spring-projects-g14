@@ -174,7 +174,7 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 	size += xtiles * ytiles * loop_body_size;
 
 	struct vc4_cl *rcl = &setup->rcl;
-	struct vc4_bo *rcl_bo = vc4_bo_create(dev, size);
+	struct vc4_bo *rcl_bo = vc4_bo_create(dev, size, VC4_BO_TYPE_RCL);
 	if (rcl_bo == NULL) {
 		return -E_NOMEM;
 	}
@@ -228,8 +228,7 @@ static int vc4_create_rcl_bo(struct device *dev, struct vc4_exec_info *exec,
 
 static int vc4_rcl_surface_setup(struct vc4_exec_info *exec,
 				 struct vc4_bo **obj,
-				 struct drm_vc4_submit_rcl_surface *surf,
-				 bool is_depth)
+				 struct drm_vc4_submit_rcl_surface *surf)
 {
 	uint8_t tiling =
 		VC4_GET_FIELD(surf->bits, VC4_LOADSTORE_TILE_BUFFER_TILING);
@@ -242,10 +241,7 @@ static int vc4_rcl_surface_setup(struct vc4_exec_info *exec,
 	if (surf->hindex == ~0)
 		return 0;
 
-	if (is_depth)
-		*obj = vc4_use_bo(exec, surf->hindex);
-	else
-		*obj = exec->fb_bo;
+	*obj = vc4_use_bo(exec, surf->hindex);
 	if (!*obj)
 		return -E_INVAL;
 
@@ -313,7 +309,7 @@ static int vc4_rcl_render_config_surface_setup(
 	if (surf->hindex == ~0)
 		return 0;
 
-	*obj = exec->fb_bo;
+	*obj = vc4_use_bo(exec, surf->hindex);
 	if (!*obj)
 		return -E_INVAL;
 
@@ -364,8 +360,7 @@ int vc4_get_rcl(struct device *dev, struct vc4_exec_info *exec)
 
 	memset(&setup, 0, sizeof(struct vc4_rcl_setup));
 
-	ret = vc4_rcl_surface_setup(exec, &setup.color_read, &args->color_read,
-				    false);
+	ret = vc4_rcl_surface_setup(exec, &setup.color_read, &args->color_read);
 	if (ret)
 		return ret;
 
@@ -374,12 +369,11 @@ int vc4_get_rcl(struct device *dev, struct vc4_exec_info *exec)
 	if (ret)
 		return ret;
 
-	ret = vc4_rcl_surface_setup(exec, &setup.zs_read, &args->zs_read, true);
+	ret = vc4_rcl_surface_setup(exec, &setup.zs_read, &args->zs_read);
 	if (ret)
 		return ret;
 
-	ret = vc4_rcl_surface_setup(exec, &setup.zs_write, &args->zs_write,
-				    true);
+	ret = vc4_rcl_surface_setup(exec, &setup.zs_write, &args->zs_write);
 	if (ret)
 		return ret;
 

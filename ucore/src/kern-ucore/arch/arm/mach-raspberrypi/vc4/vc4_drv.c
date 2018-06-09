@@ -18,7 +18,7 @@ static int vc4_allocate_bin_bo(struct device *dev)
 	struct vc4_bo *bo;
 
 	uint32_t size = 512 * 1024;
-	bo = vc4_bo_create(dev, size);
+	bo = vc4_bo_create(dev, size, VC4_BO_TYPE_BIN);
 	if (bo == NULL) {
 		return -E_NOMEM;
 	}
@@ -35,21 +35,16 @@ static int vc4_bind_fb_bo(struct device *dev)
 	struct vc4_bo *bo;
 	struct fb_info *fb;
 
-	bo = (struct vc4_bo *)kmalloc(sizeof(struct vc4_bo));
-	if (bo == NULL)
-		return -E_NOMEM;
-
 	fb = get_fb_info();
 	if (fb == NULL)
 		return -E_NODEV;
 
-	unsigned long screen_size; /* Amount of ioremapped VRAM or 0 */
-	unsigned long fb_bus_address; /* Physical address */
-
+	bo = &vc4->handle_bo_map[fb->handle];
 	bo->size = fb->screen_size;
-	bo->handle = 0;
+	bo->handle = fb->handle;
 	bo->paddr = fb->fb_bus_address;
 	bo->vaddr = fb->screen_base;
+	bo->type = VC4_BO_TYPE_FB;
 	list_init(&bo->unref_head);
 
 	vc4->fb_bo = bo;
@@ -67,12 +62,6 @@ static int vc4_probe(struct device *dev)
 					VC4_DEV_BUFSIZE);
 	if (!vc4)
 		return -E_NOMEM;
-
-	if (fb_check() == 0) {
-		ret = -E_NODEV;
-		kprintf("VC4: no framebuffer found.\n");
-		goto fail;
-	}
 
 	// The blob now has this nice handy call which powers up the v3d pipeline.
 	if ((ret = mbox_qpu_enable(1)) != 0) {
@@ -93,7 +82,7 @@ static int vc4_probe(struct device *dev)
 
 	bo_map_init(vc4->handle_bo_map);
 
-	if ((ret = vc4_bind_fb_bo(dev))) {
+	if (fb_check() && (ret = vc4_bind_fb_bo(dev))) {
 		kprintf("VC4: cannot bind framebuffer bo.\n");
 		goto fail;
 	}

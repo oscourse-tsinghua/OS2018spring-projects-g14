@@ -6,10 +6,14 @@
 #include "vc4_drm.h"
 #include "mailbox_property.h"
 
-struct vc4_bo *vc4_bo_create(struct device *dev, size_t size)
+struct vc4_bo *vc4_bo_create(struct device *dev, size_t size,
+			     enum vc4_kernel_bo_type type)
 {
 	struct vc4_dev *vc4 = to_vc4_dev(dev);
 	struct vc4_bo *bo;
+
+	if (type == VC4_BO_TYPE_FB)
+		return vc4->fb_bo;
 
 	// bo = (struct vc4_bo *)kmalloc(sizeof(struct vc4_bo));
 	// if (!bo)
@@ -46,6 +50,7 @@ struct vc4_bo *vc4_bo_create(struct device *dev, size_t size)
 	bo->handle = handle;
 	bo->paddr = bus_addr;
 	bo->vaddr = (void *)bus_addr;
+	bo->type = type;
 	list_init(&bo->unref_head);
 
 	// kprintf("vc4_bo_create: %08x %08x %08x %08x\n", bo->size, bo->handle,
@@ -62,6 +67,9 @@ void vc4_bo_destroy(struct device *dev, struct vc4_bo *bo)
 {
 	// kprintf("vc4_bo_destroy: %08x %08x %08x %08x\n", bo->size, bo->handle,
 	// 	bo->paddr, bo->vaddr);
+
+	if (bo->type == VC4_BO_TYPE_FB)
+		return;
 
 	__ucore_iounmap(bo->vaddr, bo->size);
 	mbox_mem_unlock(bo->handle);
@@ -92,10 +100,14 @@ int vc4_create_bo_ioctl(struct device *dev, void *data)
 	struct vc4_bo *bo = NULL;
 	int ret;
 
-	bo = vc4_bo_create(dev, args->size);
+	if (args->flags & VC4_CREATE_BO_IS_FRAMEBUFFER)
+		bo = vc4_bo_create(dev, args->size, VC4_BO_TYPE_FB);
+	else
+		bo = vc4_bo_create(dev, args->size, VC4_BO_TYPE_V3D);
 	if (bo == NULL)
 		return -E_NOMEM;
 
+	args->size = bo->size;
 	args->handle = bo->handle;
 
 	return 0;

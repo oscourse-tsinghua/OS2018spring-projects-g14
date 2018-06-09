@@ -20,6 +20,7 @@ struct vc4_bo {
 #define le2bo(le, member) to_struct((le), struct vc4_bo, member)
 
 struct vc4_bo *vc4_bo_alloc(struct vc4_context *vc4, size_t size);
+struct vc4_bo *vc4_bo_alloc_fb(struct vc4_context *vc4);
 void vc4_bo_free(struct vc4_bo *bo);
 void *vc4_bo_map(struct vc4_bo *bo);
 

@@ -16,6 +16,7 @@ struct fb_info {
 	char *screen_base; /* Virtual address */
 	unsigned long screen_size; /* Amount of ioremapped VRAM or 0 */
 	unsigned long fb_bus_address; /* Physical address */
+	uint32_t handle; /* Handle for buffer object */
 };
 
 #endif /* BCM2708_FB_H */

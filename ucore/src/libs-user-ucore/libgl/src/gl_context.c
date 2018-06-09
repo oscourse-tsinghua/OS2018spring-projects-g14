@@ -99,7 +99,7 @@ int gl_create_window(struct gl_context *ctx)
 	}
 
 	if ((ret = ioctl(fd, FBIOGET_VSCREENINFO, var))) {
-		cprintf("GLES: fb ioctl error 0x%x\n", FBIOGET_VSCREENINFO);
+		cprintf("GLES: fb get vscreen info ioctl failure: %e.\n", ret);
 		goto out;
 	}
 
@@ -108,7 +108,7 @@ int gl_create_window(struct gl_context *ctx)
 
 	void *buf = (void *)sys_linux_mmap(0, size, fd, 0);
 	if (buf == NULL) {
-		cprintf("GLES: fb mmap error\n");
+		cprintf("GLES: fb mmap failure: %e.\n", ret);
 		ret = -E_NOMEM;
 		goto out;
 	}
@@ -185,7 +185,7 @@ int gl_swap_buffers(struct gl_context *ctx)
 
 	var->yoffset = framebuffer->offset;
 	if ((ret = ioctl(ctx->screen.fb_fd, FBIOPAN_DISPLAY, var))) {
-		cprintf("GLES: fb ioctl error 0x%x\n", FBIOPAN_DISPLAY);
+		cprintf("GLES: fb pan display ioctl failure: %e.\n", ret);
 		return ret;
 	}
 

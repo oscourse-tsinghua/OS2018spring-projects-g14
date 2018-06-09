@@ -10,6 +10,14 @@
 #include "vc4_regs.h"
 #include "bcm2708_fb.h"
 
+enum vc4_kernel_bo_type {
+	VC4_BO_TYPE_FB,
+	VC4_BO_TYPE_V3D,
+	VC4_BO_TYPE_BIN,
+	VC4_BO_TYPE_RCL,
+	VC4_BO_TYPE_BCL,
+};
+
 struct vc4_dev {
 	struct device *dev;
 
@@ -41,6 +49,7 @@ struct vc4_bo {
 	uint32_t handle;
 	uint32_t paddr;
 	void *vaddr;
+	enum vc4_kernel_bo_type type;
 
 	/* List entry for the BO's position in either
 	 * vc4_exec_info->unref_list or vc4_dev->bo_cache.time_list
@@ -132,7 +141,8 @@ int vc4_mmap_bo_ioctl(struct device *dev, void *data);
 int vc4_free_bo_ioctl(struct device *dev, void *data);
 int vc4_submit_cl_ioctl(struct device *dev, void *data);
 
-struct vc4_bo *vc4_bo_create(struct device *dev, size_t size);
+struct vc4_bo *vc4_bo_create(struct device *dev, size_t size,
+			     enum vc4_kernel_bo_type type);
 struct vc4_bo *vc4_lookup_bo(struct device *dev, uint32_t handle);
 void vc4_bo_destroy(struct device *dev, struct vc4_bo *bo);
 

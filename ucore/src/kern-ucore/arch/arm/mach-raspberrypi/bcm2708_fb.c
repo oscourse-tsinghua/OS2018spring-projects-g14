@@ -13,6 +13,8 @@
 #include "barrier.h"
 #include "teletext.h"
 
+#define MAX_HANDLE_TRY 4
+
 /* Screen parameters set in fb_init() */
 /* Max x/y character cell */
 static unsigned int max_x, max_y;
@@ -48,6 +50,17 @@ static int bcm2708_fb_pan_display(struct fb_var_screeninfo *var)
 	fb->var.yoffset = var->yoffset;
 
 	return ret;
+}
+
+static uint32_t bcm2708_fb_get_handle(uint32_t bus_addr)
+{
+	uint32_t handle;
+	for (handle = 1; handle <= MAX_HANDLE_TRY; handle++) {
+		uint32_t addr = mbox_mem_lock(handle);
+		if (addr == bus_addr)
+			return handle;
+	}
+	return 0;
 }
 
 static int bcm2708_fb_probe(struct device *dev)
@@ -113,6 +126,12 @@ static int bcm2708_fb_probe(struct device *dev)
 		goto free_fb;
 	}
 
+	uint32_t handle = bcm2708_fb_get_handle(fbinfo.base);
+	if (handle == 0) {
+		ret = -E_NO_MEM;
+		goto free_fb;
+	}
+
 	fb->var.xres = fbinfo.xres;
 	fb->var.yres = fbinfo.yres;
 	fb->var.xres_virtual = fbinfo.xres_virtual;
@@ -127,6 +146,7 @@ static int bcm2708_fb_probe(struct device *dev)
 	fb->screen_size = fbinfo.screen_size;
 	fb->screen_base =
 		(char *)__ucore_ioremap(fbinfo.base, fb->screen_size, 0);
+	fb->handle = handle;
 	fb->dev = dev;
 	dev->driver_data = fb;
 	bcm2708_fb = fb;
@@ -320,7 +340,7 @@ static void *fb_mmap(struct device *dev, void *addr, size_t len, size_t pgoff)
 {
 	struct fb_info *info = (struct fb_info *)dev->driver_data;
 
-	int ret = -E_INVAL;
+	int ret = 0;
 	if (!info) {
 		ret = -E_NODEV;
 		goto out;
